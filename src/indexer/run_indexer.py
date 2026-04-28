@@ -6,6 +6,7 @@ chunks it, generates embeddings, and upserts into Azure AI Search.
 """
 
 import os
+import time
 import hashlib
 import logging
 from typing import Iterator
@@ -61,6 +62,7 @@ def get_openai_client() -> AzureOpenAI:
         azure_endpoint=os.getenv("AZURE_OPENAI_ENDPOINT"),
         api_key=os.getenv("AZURE_OPENAI_API_KEY"),
         api_version="2024-02-01",
+        max_retries=6,
     )
 
 
@@ -139,9 +141,20 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return [c for c in chunks if c.strip()]
 
 
+EMBED_BATCH_SIZE = 16
+EMBED_BATCH_DELAY = 2.0  # seconds between batches to stay within S0 rate limits
+
+
 def embed(openai_client: AzureOpenAI, texts: list[str]) -> list[list[float]]:
-    response = openai_client.embeddings.create(model=EMBEDDING_DEPLOYMENT, input=texts)
-    return [item.embedding for item in response.data]
+    """Embed texts in small batches with a delay to avoid 429 rate limits."""
+    all_embeddings: list[list[float]] = []
+    for i in range(0, len(texts), EMBED_BATCH_SIZE):
+        batch = texts[i : i + EMBED_BATCH_SIZE]
+        response = openai_client.embeddings.create(model=EMBEDDING_DEPLOYMENT, input=batch)
+        all_embeddings.extend(item.embedding for item in response.data)
+        if i + EMBED_BATCH_SIZE < len(texts):
+            time.sleep(EMBED_BATCH_DELAY)
+    return all_embeddings
 
 
 def extract_html_text(html_bytes: bytes) -> str:
