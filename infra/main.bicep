@@ -197,5 +197,5 @@ output storageAccountName string = storageAccount.name
 output searchEndpoint string = 'https://${searchService.name}.search.windows.net'
 output openAiEndpoint string = openAiAccount.properties.endpoint
 output docIntelEndpoint string = docIntelligence.properties.endpoint
-output webAppName string = deployWebApp ? webApp.name : ''
-output webAppUrl string = deployWebApp ? 'https://${webApp.properties.defaultHostName}' : ''
+output webAppName string = deployWebApp ? webApp!.name : ''
+output webAppUrl string = deployWebApp ? 'https://${webApp!.properties.defaultHostName}' : ''
