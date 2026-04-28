@@ -81,7 +81,37 @@ WarwickSchoolChatbot/
 | Storage | Azure Blob Storage |
 | Infrastructure | Azure Bicep |
 
-## Getting Started
+## Cloud Deployment
+
+The recommended first rollout is:
+
+- One Azure App Service hosting the FastAPI backend and the built React frontend.
+- Existing Azure OpenAI, Azure AI Search, Azure Blob Storage, and Azure Document Intelligence services.
+- One scheduled GitHub Actions workflow that runs the crawler and indexer weekly on GitHub-hosted runners.
+
+This keeps the chatbot fully cloud-hosted without requiring any local machine to stay online.
+
+### Azure Hosting Model
+
+- Users access one App Service URL.
+- The React frontend is built during deployment and served by FastAPI in production.
+- The weekly workflow runs `python src/crawler/run_crawler.py` and then `python src/indexer/run_indexer.py`.
+- The live Warwick Prep website remains the canonical content source.
+
+### GitHub Configuration
+
+Add these repository secrets for Azure login:
+
+- `AZURE_CLIENT_ID`
+- `AZURE_TENANT_ID`
+- `AZURE_SUBSCRIPTION_ID`
+
+Add these repository variables for deployment and scheduled ingestion:
+
+- `AZURE_RESOURCE_GROUP`
+- `AZURE_WEBAPP_NAME`
+
+## Local Development
 
 ### Prerequisites
 
@@ -113,11 +143,16 @@ cp .env.example .env
 python src/crawler/run_crawler.py
 ```
 
+The crawler keeps its state in Azure Blob Storage and is designed to be re-run on a schedule.
+After the first crawl, subsequent runs reuse stored `ETag` or `Last-Modified` values, skip unchanged pages, upload only changed content, and remove blobs for pages that disappeared from the live site.
+
 ### 4. Run the indexer
 
 ```bash
 python src/indexer/run_indexer.py
 ```
+
+The indexer also runs incrementally. It reads crawler state, re-embeds only changed sources, and removes stale search documents when content is updated or removed.
 
 ### 5. Start the API
 
@@ -136,6 +171,15 @@ npm start
 ## Environment Variables
 
 See `.env.example` for all required variables.
+
+## Operating Model
+
+- The live Warwick Prep website is the canonical content source.
+- Azure Blob Storage holds the latest crawled snapshot plus crawl and index state.
+- Azure AI Search is the retrieval layer used by the chatbot at runtime.
+- A practical cloud schedule is: run the crawler weekly in GitHub Actions, then run the indexer immediately after it in the same workflow.
+
+This keeps chatbot responses fast and stable while still following changes made on the live website.
 
 ## License
 

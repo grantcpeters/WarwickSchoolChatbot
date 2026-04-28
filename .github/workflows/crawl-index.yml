@@ -1,0 +1,61 @@
+name: Weekly Crawl And Index
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 3 * * 0'
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  crawl-and-index:
+    runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: ${{ github.workspace }}
+      AZURE_OPENAI_ENDPOINT: ${{ secrets.AZURE_OPENAI_ENDPOINT }}
+      AZURE_OPENAI_API_KEY: ${{ secrets.AZURE_OPENAI_API_KEY }}
+      AZURE_OPENAI_CHAT_DEPLOYMENT: ${{ vars.AZURE_OPENAI_CHAT_DEPLOYMENT }}
+      AZURE_OPENAI_EMBEDDING_DEPLOYMENT: ${{ vars.AZURE_OPENAI_EMBEDDING_DEPLOYMENT }}
+      AZURE_SEARCH_ENDPOINT: ${{ secrets.AZURE_SEARCH_ENDPOINT }}
+      AZURE_SEARCH_API_KEY: ${{ secrets.AZURE_SEARCH_API_KEY }}
+      AZURE_SEARCH_INDEX_NAME: ${{ vars.AZURE_SEARCH_INDEX_NAME }}
+      AZURE_DOC_INTELLIGENCE_ENDPOINT: ${{ secrets.AZURE_DOC_INTELLIGENCE_ENDPOINT }}
+      AZURE_DOC_INTELLIGENCE_KEY: ${{ secrets.AZURE_DOC_INTELLIGENCE_KEY }}
+      AZURE_STORAGE_ACCOUNT_NAME: ${{ vars.AZURE_STORAGE_ACCOUNT_NAME }}
+      AZURE_STORAGE_CONNECTION_STRING: ${{ secrets.AZURE_STORAGE_CONNECTION_STRING }}
+      AZURE_STORAGE_CONTAINER_RAW: ${{ vars.AZURE_STORAGE_CONTAINER_RAW }}
+      AZURE_STORAGE_CONTAINER_PDF: ${{ vars.AZURE_STORAGE_CONTAINER_PDF }}
+      CRAWL_START_URL: ${{ vars.CRAWL_START_URL }}
+      CRAWL_ALLOWED_DOMAINS: ${{ vars.CRAWL_ALLOWED_DOMAINS }}
+      CRAWL_MAX_DEPTH: ${{ vars.CRAWL_MAX_DEPTH }}
+      CRAWL_DELAY_SECONDS: ${{ vars.CRAWL_DELAY_SECONDS }}
+      RAG_TOP_K: ${{ vars.RAG_TOP_K }}
+      RAG_CHUNK_SIZE: ${{ vars.RAG_CHUNK_SIZE }}
+      RAG_CHUNK_OVERLAP: ${{ vars.RAG_CHUNK_OVERLAP }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+
+      - name: Azure login
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Run incremental crawler
+        run: python src/crawler/run_crawler.py
+
+      - name: Run incremental indexer
+        run: python src/indexer/run_indexer.py

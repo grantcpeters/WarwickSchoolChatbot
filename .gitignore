@@ -75,7 +75,12 @@ secrets.json
 
 # Azure
 .azure/
+!.azure/
+!.azure/deployment-plan.md
 azuredeploy.parameters.json
+
+# Built frontend served by FastAPI during deployment packaging
+src/api/static/
 
 # OS
 Thumbs.db

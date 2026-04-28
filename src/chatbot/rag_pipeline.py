@@ -6,11 +6,12 @@ and calls Azure OpenAI to generate a grounded response.
 import os
 from typing import AsyncIterator
 
-from azure.identity import DefaultAzureCredential
 from azure.search.documents.aio import SearchClient
 from azure.search.documents.models import VectorizedQuery
 from openai import AsyncAzureOpenAI
 from dotenv import load_dotenv
+
+from src.shared.azure_credentials import get_service_credential
 
 load_dotenv()
 
@@ -38,7 +39,7 @@ def _get_search() -> SearchClient:
     return SearchClient(
         endpoint=os.getenv("AZURE_SEARCH_ENDPOINT"),
         index_name=INDEX_NAME,
-        credential=DefaultAzureCredential(),
+        credential=get_service_credential("AZURE_SEARCH_API_KEY"),
     )
 
 
