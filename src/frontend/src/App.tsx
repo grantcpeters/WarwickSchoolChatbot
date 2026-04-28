@@ -9,15 +9,15 @@ interface Message {
 }
 
 const SUGGESTED = [
-  { icon: '🎓', text: 'What are the admissions requirements?' },
-  { icon: '📚', text: 'Tell me about the curriculum' },
-  { icon: '⚽', text: 'What clubs and activities are available?' },
-  { icon: '📅', text: 'When is the next open day?' },
-  { icon: '💷', text: 'What are the school fees?' },
-  { icon: '🏫', text: 'Tell me about the school facilities' },
+  { icon: '????', text: 'What are the admissions requirements?' },
+  { icon: '????', text: 'Tell me about the curriculum' },
+  { icon: '???', text: 'What clubs and activities are available?' },
+  { icon: '????', text: 'When is the next open day?' },
+  { icon: '????', text: 'What are the school fees?' },
+  { icon: '????', text: 'Tell me about the school facilities' },
 ];
 
-const API_BASE = process.env.REACT_APP_API_URL || '';
+const API_BASE = import.meta.env.VITE_API_URL || '';
 
 async function streamChat(
   message: string,
@@ -53,7 +53,7 @@ async function streamChat(
   return sourceMatch ? sourceMatch[1].split(',').map(s => s.trim()).filter(Boolean) : [];
 }
 
-// ── Icons ──────────────────────────────────────────────────────────
+// ?????? Icons ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 const SendIcon = () => (
   <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
     <line x1="22" y1="2" x2="11" y2="13" />
@@ -67,7 +67,7 @@ const SchoolIcon = () => (
   </svg>
 );
 
-// ── App ────────────────────────────────────────────────────────────
+// ?????? App ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
@@ -139,7 +139,7 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* ── Sidebar ── */}
+      {/* ?????? Sidebar ?????? */}
       <aside className="sidebar">
         <div className="sidebar__brand">
           <div className="sidebar__logo"><SchoolIcon /></div>
@@ -163,12 +163,12 @@ export default function App() {
 
         <div className="sidebar__footer">
           <a href="https://www.warwickprep.com" target="_blank" rel="noopener noreferrer" className="sidebar__link">
-            warwickprep.com ↗
+            warwickprep.com ???
           </a>
         </div>
       </aside>
 
-      {/* ── Main ── */}
+      {/* ?????? Main ?????? */}
       <div className="main">
         {/* Mobile header */}
         <header className="mobile-header">
@@ -185,7 +185,7 @@ export default function App() {
               <div className="welcome__icon"><SchoolIcon /></div>
               <h1 className="welcome__title">How can I help you today?</h1>
               <p className="welcome__subtitle">
-                Ask me anything about Warwick Prep School — admissions, curriculum, events, and more.
+                Ask me anything about Warwick Prep School ??? admissions, curriculum, events, and more.
               </p>
               <div className="welcome__chips">
                 {SUGGESTED.map((s, i) => (
@@ -227,7 +227,7 @@ export default function App() {
                             rel="noopener noreferrer"
                             className="source-chip"
                           >
-                            🔗 {s}
+                            ???? {s}
                           </a>
                         ))}
                       </div>
@@ -251,7 +251,7 @@ export default function App() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about Warwick Prep School…"
+              placeholder="Ask about Warwick Prep School???"
               disabled={isLoading}
               rows={1}
               className="input-bar__textarea"
@@ -265,7 +265,7 @@ export default function App() {
               <SendIcon />
             </button>
           </div>
-          <p className="input-bar__hint">Enter to send · Shift+Enter for new line</p>
+          <p className="input-bar__hint">Enter to send ?? Shift+Enter for new line</p>
         </div>
       </div>
     </div>
@@ -273,157 +273,3 @@ export default function App() {
 }
 
 
-interface Message {
-  role: 'user' | 'assistant';
-  content: string;
-  sources?: string[];
-}
-
-const API_BASE = process.env.REACT_APP_API_URL || '';
-
-async function streamChat(
-  message: string,
-  history: Message[],
-  onToken: (token: string) => void
-): Promise<string[]> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      history: history.map(({ role, content }) => ({ role, content })),
-    }),
-  });
-
-  if (!response.ok) throw new Error('Chat request failed');
-
-  const reader = response.body!.getReader();
-  const decoder = new TextDecoder();
-  let full = '';
-
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    const chunk = decoder.decode(value, { stream: true });
-    full += chunk;
-    onToken(chunk);
-  }
-
-  // Extract sources if present
-  const sourceMatch = full.match(/__sources__:(.+)$/);
-  return sourceMatch ? sourceMatch[1].split(',') : [];
-}
-
-export default function App() {
-  const [messages, setMessages] = useState<Message[]>([]);
-  const [input, setInput] = useState('');
-  const [isLoading, setIsLoading] = useState(false);
-  const bottomRef = useRef<HTMLDivElement>(null);
-
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
-
-  const sendMessage = async () => {
-    const text = input.trim();
-    if (!text || isLoading) return;
-
-    const userMsg: Message = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
-    setInput('');
-    setIsLoading(true);
-
-    const assistantMsg: Message = { role: 'assistant', content: '' };
-    setMessages(prev => [...prev, assistantMsg]);
-
-    try {
-      const sources = await streamChat(text, messages, (token) => {
-        if (!token.startsWith('__sources__:')) {
-          setMessages(prev => {
-            const updated = [...prev];
-            updated[updated.length - 1] = {
-              ...updated[updated.length - 1],
-              content: updated[updated.length - 1].content + token,
-            };
-            return updated;
-          });
-        }
-      });
-
-      if (sources.length > 0) {
-        setMessages(prev => {
-          const updated = [...prev];
-          updated[updated.length - 1] = { ...updated[updated.length - 1], sources };
-          return updated;
-        });
-      }
-    } catch {
-      setMessages(prev => {
-        const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: 'Sorry, something went wrong. Please try again.',
-        };
-        return updated;
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
-  };
-
-  return (
-    <div className="app">
-      <header className="header">
-        <img src="/logo.png" alt="Warwick Prep School" className="logo" />
-        <h1>Warwick Prep School Assistant</h1>
-      </header>
-
-      <main className="chat-window">
-        {messages.length === 0 && (
-          <div className="empty-state">
-            <p>Ask me anything about Warwick Prep School — admissions, curriculum, events, and more.</p>
-          </div>
-        )}
-        {messages.map((msg, i) => (
-          <div key={i} className={`message message--${msg.role}`}>
-            <div className="message__bubble">{msg.content}</div>
-            {msg.sources && msg.sources.length > 0 && (
-              <div className="message__sources">
-                Sources: {msg.sources.map((s, j) => <span key={j} className="source-tag">{s}</span>)}
-              </div>
-            )}
-          </div>
-        ))}
-        {isLoading && messages[messages.length - 1]?.content === '' && (
-          <div className="message message--assistant">
-            <div className="message__bubble typing">
-              <span /><span /><span />
-            </div>
-          </div>
-        )}
-        <div ref={bottomRef} />
-      </main>
-
-      <footer className="input-area">
-        <textarea
-          value={input}
-          onChange={e => setInput(e.target.value)}
-          onKeyDown={handleKeyDown}
-          placeholder="Ask a question about Warwick Prep School…"
-          disabled={isLoading}
-          rows={2}
-        />
-        <button onClick={sendMessage} disabled={isLoading || !input.trim()}>
-          Send
-        </button>
-      </footer>
-    </div>
-  );
-}
