@@ -1,0 +1,82 @@
+# General
+.DS_Store
+.env
+.vscode/
+*.log
+*.tmp
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+venv/
+env/
+ENV/
+.venv
+pip-log.txt
+pip-delete-this-directory.txt
+.pytest_cache/
+.coverage
+htmlcov/
+*.egg-info/
+dist/
+build/
+
+# Jupyter Notebooks
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# Node.js
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# .NET
+bin/
+obj/
+*.user
+*.suo
+
+# AI/ML specific
+*.h5
+*.pkl
+*.pth
+*.onnx
+*.pb
+checkpoints/
+tensorboard/
+
+# Data files (large datasets)
+*.csv
+*.parquet
+# Allow sample JSON/CSV but ignore everything else
+data/**/*.json
+data/**/*.csv
+!data/sample/*.json
+!data/sample/*.csv
+data/**/*.html
+data/**/*.pdf
+
+# Crawled/downloaded content
+data/raw/
+data/processed/
+
+# API Keys and Secrets
+*.key
+*.pem
+secrets.json
+.env.local
+.env.*.local
+
+# Azure
+.azure/
+azuredeploy.parameters.json
+
+# OS
+Thumbs.db
+desktop.ini
