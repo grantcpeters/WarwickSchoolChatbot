@@ -22,14 +22,19 @@ const API_BASE = import.meta.env.VITE_API_URL || '';
 /** Derive a human-readable label from a URL path as a fallback when no title is stored. */
 function urlToLabel(url: string): string {
   try {
-    const { pathname } = new URL(url.startsWith('http') ? url : `https://${url}`);
+    const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
+    const { pathname } = parsed;
     const segments = pathname.split('/').filter(Boolean);
     if (segments.length === 0) return 'Warwick Prep School';
-    return segments[segments.length - 1]
-      .replace(/-/g, ' ')
+    const last = segments[segments.length - 1];
+    // Hex hash filenames (e.g. ED13E431B4F0ABE4E536FE4074E3ECD2.pdf)
+    if (/^[0-9a-f]{16,}\.(pdf|html)$/i.test(last)) return 'School Document';
+    return last
+      .replace(/\.[^.]+$/, '')   // strip file extension
+      .replace(/[-_]/g, ' ')
       .replace(/\b\w/g, c => c.toUpperCase());
   } catch {
-    return url;
+    return 'Source';
   }
 }
 

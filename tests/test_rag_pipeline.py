@@ -140,6 +140,13 @@ def test_system_prompt_contains_refusal_rules():
     assert "code" in prompt.lower()
 
 
+def test_system_prompt_allows_formatting():
+    from src.chatbot.rag_pipeline import _build_system_prompt
+    prompt = _build_system_prompt()
+    # Must explicitly allow tables/formatting for school info
+    assert "table" in prompt.lower() or "formatted" in prompt.lower()
+
+
 def test_system_prompt_contains_contact_details():
     from src.chatbot.rag_pipeline import _build_system_prompt
     prompt = _build_system_prompt()
@@ -288,4 +295,50 @@ async def test_chat_no_sources_when_no_http_urls():
         tokens = [t async for t in chat("question", [])]
         full = "".join(tokens)
         assert "__sources__:" not in full
+
+
+@pytest.mark.asyncio
+async def test_chat_filters_download_asp_sources():
+    """download.asp PDF links should not appear as source chips."""
+    with patch("src.chatbot.rag_pipeline.retrieve") as mock_retrieve, \
+         patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls:
+
+        mock_retrieve.return_value = [
+            {"content": "uniform info", "source": "https://www.warwickprep.com/attachments/download.asp?file=123&type=pdf", "type": "pdf", "title": ""},
+            {"content": "more info", "source": "https://www.warwickprep.com/uniform", "type": "html", "title": "Uniform"},
+        ]
+
+        event = MagicMock(); event.choices = [MagicMock()]; event.choices[0].delta.content = "info"
+        mock_openai = AsyncMock()
+        mock_openai.chat.completions.create.return_value = AsyncIteratorMock([event])
+        mock_openai_cls.return_value = mock_openai
+
+        from src.chatbot.rag_pipeline import chat
+        tokens = [t async for t in chat("uniform", [])]
+        full = "".join(tokens)
+        assert "download.asp" not in full
+        assert "https://www.warwickprep.com/uniform" in full
+
+
+@pytest.mark.asyncio
+async def test_chat_filters_hex_hash_pdf_sources():
+    """Hex-hash blob names used as source URLs should be filtered even if they start with http."""
+    with patch("src.chatbot.rag_pipeline.retrieve") as mock_retrieve, \
+         patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls:
+
+        mock_retrieve.return_value = [
+            {"content": "pdf content", "source": "https://www.warwickprep.com/ED13E431B4F0ABE4E536FE4074E3ECD2.pdf", "type": "pdf", "title": ""},
+            {"content": "page content", "source": "https://www.warwickprep.com/catering", "type": "html", "title": "Catering"},
+        ]
+
+        event = MagicMock(); event.choices = [MagicMock()]; event.choices[0].delta.content = "lunch"
+        mock_openai = AsyncMock()
+        mock_openai.chat.completions.create.return_value = AsyncIteratorMock([event])
+        mock_openai_cls.return_value = mock_openai
+
+        from src.chatbot.rag_pipeline import chat
+        tokens = [t async for t in chat("lunch", [])]
+        full = "".join(tokens)
+        assert "ED13E431" not in full
+        assert "https://www.warwickprep.com/catering" in full
 
