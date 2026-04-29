@@ -30,6 +30,10 @@ _EVENT_KW = (
     "holiday", "school event", "open afternoon",
 )
 
+# Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
+# so the weekly PDF menus surface even though they don't match "what's for lunch" well.
+_MENU_KW = ("lunch", "menu", "food today", "catering", "eat today", "dinner")
+
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are an information assistant exclusively for Warwick Prep School.
 Your sole purpose is to help parents, pupils, and visitors find information about the school.
@@ -207,6 +211,29 @@ async def retrieve(query: str) -> list[dict]:
             if admissions_chunks:
                 seen_urls = {c["source"] for c in admissions_chunks}
                 raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
+
+        # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
+        # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
+        # "Monday Tuesday Wednesday") that doesn't match "what's for lunch today" well
+        # in hybrid search — so we need to search for them explicitly.
+        if any(kw in query.lower() for kw in _MENU_KW):
+            menu_vq = VectorizedQuery(
+                vector=vector,
+                k_nearest_neighbors=5,
+                fields="content_vector",
+            )
+            menu_supp = await _do_search(
+                search_client,
+                "weekly lunch menu monday tuesday wednesday thursday friday option 1 term week",
+                menu_vq, 5, select_fields,
+            )
+            menu_chunks = [
+                c for c in menu_supp
+                if "download.asp" in c["source"].lower() and "type=pdf" in c["source"].lower()
+            ]
+            if menu_chunks:
+                seen_urls = {c["source"] for c in raw}
+                raw = menu_chunks + [c for c in raw if c["source"] not in {c2["source"] for c2 in menu_chunks}]
 
     # Re-rank (event/date queries only):
     #  - Demote news/blog posts below canonical section pages (stale event info)

@@ -168,6 +168,46 @@ async def test_retrieve_reranks_newer_news_before_older_news():
         assert "sept2024" in results[1]["source"]
 
 
+@pytest.mark.asyncio
+async def test_retrieve_surfaces_menu_pdf_for_lunch_query():
+    """For lunch/menu queries, weekly menu PDFs from download.asp should be injected first."""
+    general_chunk = make_search_result(
+        content="Catering: all children have lunch at school. Menus are available online.",
+        source_url="https://www.warwickprep.com/catering",
+    )
+    menu_pdf_chunk = make_search_result(
+        content="WPS SUMMER TERM WEEK 3 2026 Monday Tuesday Wednesday Thursday Friday OPTION 1 BBQ Chicken",
+        source_url="https://www.warwickprep.com/attachments/download.asp?file=979&type=pdf",
+    )
+
+    call_count = 0
+
+    def search_side_effect(*args, **kwargs):
+        nonlocal call_count
+        call_count += 1
+        search_text = kwargs.get("search_text", args[0] if args else "")
+        if "monday tuesday wednesday" in search_text.lower():
+            return AsyncIteratorMock([menu_pdf_chunk])
+        return AsyncIteratorMock([general_chunk])
+
+    instance = AsyncMock()
+    instance.__aenter__ = AsyncMock(return_value=instance)
+    instance.__aexit__ = AsyncMock(return_value=False)
+    instance.search.side_effect = search_side_effect
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = instance
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("what is on the lunch menu today")
+        # Menu PDF should be injected at the front
+        assert "download.asp" in results[0]["source"]
+        assert call_count == 2  # main search + supplemental menu search
+
+
 def test_most_recent_date_full_date():
     from src.chatbot.rag_pipeline import _most_recent_date
     from datetime import datetime
