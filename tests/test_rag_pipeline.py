@@ -141,6 +141,58 @@ async def test_retrieve_reranks_admissions_before_news():
         assert "news" in results[1]["source"]
 
 
+@pytest.mark.asyncio
+async def test_retrieve_reranks_newer_news_before_older_news():
+    """Within the news tier, chunks mentioning more recent dates should rank first."""
+    older_chunk = make_search_result(
+        content="Open morning Saturday 21 September 2024, from 9:30am.",
+        source_url="https://www.warwickprep.com/news-and-events/open-morning-sept2024",
+    )
+    newer_chunk = make_search_result(
+        content="Open morning Saturday 21 March 2026, advance booking now closed.",
+        source_url="https://www.warwickprep.com/news-and-events/open-morning-march2026",
+    )
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        # Search returns older first
+        mock_search_cls.return_value = make_search_mock([older_chunk, newer_chunk])
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("when is the next open day")
+        # March 2026 is more recent than September 2024
+        assert "march2026" in results[0]["source"]
+        assert "sept2024" in results[1]["source"]
+
+
+def test_most_recent_date_full_date():
+    from src.chatbot.rag_pipeline import _most_recent_date
+    from datetime import datetime
+    text = "Open Morning on Saturday 21 March 2026, from 9.30am to 12.15pm."
+    assert _most_recent_date(text) == datetime(2026, 3, 21).toordinal()
+
+
+def test_most_recent_date_month_year_only():
+    from src.chatbot.rag_pipeline import _most_recent_date
+    from datetime import datetime
+    text = "Our next open morning will be in September 2025."
+    assert _most_recent_date(text) == datetime(2025, 9, 1).toordinal()
+
+
+def test_most_recent_date_picks_latest():
+    from src.chatbot.rag_pipeline import _most_recent_date
+    from datetime import datetime
+    text = "Past mornings: September 2024 and March 2026."
+    assert _most_recent_date(text) == datetime(2026, 3, 1).toordinal()
+
+
+def test_most_recent_date_returns_zero_when_no_dates():
+    from src.chatbot.rag_pipeline import _most_recent_date
+    assert _most_recent_date("No dates here at all.") == 0
+
+
 # ── System prompt ─────────────────────────────────────────────
 
 def test_system_prompt_contains_school_name():
@@ -365,4 +417,27 @@ async def test_chat_filters_hex_hash_pdf_sources():
         full = "".join(tokens)
         assert "ED13E431" not in full
         assert "https://www.warwickprep.com/catering" in full
+
+
+@pytest.mark.asyncio
+async def test_chat_filters_malformed_at_sign_urls():
+    """URLs like http://admissions@warwickprep.com/... should not appear as source chips."""
+    with patch("src.chatbot.rag_pipeline.retrieve") as mock_retrieve, \
+         patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls:
+
+        mock_retrieve.return_value = [
+            {"content": "open events info", "source": "http://admissions@warwickprep.com/admissions/open-events", "type": "html", "title": "Open Events"},
+            {"content": "admissions info", "source": "https://www.warwickprep.com/admissions", "type": "html", "title": "Admissions"},
+        ]
+
+        event = MagicMock(); event.choices = [MagicMock()]; event.choices[0].delta.content = "info"
+        mock_openai = AsyncMock()
+        mock_openai.chat.completions.create.return_value = AsyncIteratorMock([event])
+        mock_openai_cls.return_value = mock_openai
+
+        from src.chatbot.rag_pipeline import chat
+        tokens = [t async for t in chat("open day", [])]
+        full = "".join(tokens)
+        assert "admissions@warwickprep.com" not in full
+        assert "https://www.warwickprep.com/admissions" in full
 

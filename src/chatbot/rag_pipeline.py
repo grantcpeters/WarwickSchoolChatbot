@@ -4,7 +4,8 @@ and calls Azure OpenAI to generate a grounded response.
 """
 
 import os
-from datetime import date
+import re
+from datetime import date, datetime
 from typing import AsyncIterator
 
 from azure.search.documents.aio import SearchClient
@@ -59,6 +60,44 @@ STRICT RULES — you must follow these without exception:
 - If a question is outside your scope, respond: "I can only help with questions about \
 Warwick Prep School. For anything else, please use a general search engine."
 """
+
+
+_MONTH_MAP = {
+    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
+    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
+    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
+    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+}
+_DATE_FULL = re.compile(
+    r'\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|'
+    r'october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b',
+    re.IGNORECASE,
+)
+_DATE_MON_YEAR = re.compile(
+    r'\b(january|february|march|april|may|june|july|august|september|'
+    r'october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b',
+    re.IGNORECASE,
+)
+
+
+def _most_recent_date(text: str) -> int:
+    """Return the ordinal of the most recent date found in text, or 0 if none."""
+    found: list[datetime] = []
+    for m in _DATE_FULL.finditer(text):
+        try:
+            found.append(datetime(_int(m.group(3)), _MONTH_MAP[m.group(2).lower()], int(m.group(1))))
+        except ValueError:
+            pass
+    for m in _DATE_MON_YEAR.finditer(text):
+        try:
+            found.append(datetime(int(m.group(2)), _MONTH_MAP[m.group(1).lower()], 1))
+        except ValueError:
+            pass
+    return max((d.toordinal() for d in found), default=0)
+
+
+def _int(s: str) -> int:
+    return int(s)
 
 
 def _build_system_prompt() -> str:
@@ -163,15 +202,18 @@ async def retrieve(query: str) -> list[dict]:
                 seen_urls = {c["source"] for c in admissions_chunks}
                 raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
 
-    # Re-rank: boost chunks from canonical section pages (/admissions/, /information/, etc.)
-    # over news/blog posts which may contain outdated event info.
+    # Re-rank:
+    #  primary   — canonical section pages (/admissions/, /information/) before news/blog
+    #  secondary — within each tier, chunks with more recent dates rank first
     _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
 
-    def _rank_key(chunk: dict) -> int:
+    def _rank_key(chunk: dict) -> tuple:
         url = chunk["source"].lower()
-        return 1 if any(p in url for p in _NEWS_PATHS) else 0
+        path_rank = 1 if any(p in url for p in _NEWS_PATHS) else 0
+        date_rank = -_most_recent_date(chunk["content"])  # negate: higher ordinal → sorts first
+        return (path_rank, date_rank)
 
-    raw.sort(key=_rank_key)  # canonical pages first, news posts last
+    raw.sort(key=_rank_key)  # canonical pages first; most-recent-dated chunks within each tier
     return raw[:TOP_K]
 
 
@@ -188,14 +230,17 @@ async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[s
     #   - must start with http (skip stale blob-name entries)
     #   - skip download.asp links (PDF file downloads — not useful as navigation chips)
     #   - skip hex-hash filenames (old blob-named entries that slipped through)
-    _HEX_HASH_RE = __import__('re').compile(r'^[0-9a-f]{16,}\.(pdf|html)$', __import__('re').IGNORECASE)
+    #   - skip malformed URLs where the netloc contains '@' (scraped email addresses)
+    from urllib.parse import urlparse
+    _HEX_HASH_RE = re.compile(r'^[0-9a-f]{16,}\.(pdf|html)$', re.IGNORECASE)
     seen: dict[str, str] = {}
     for c in chunks:
         url = c["source"]
         if not url.startswith("http"):
             continue
-        from urllib.parse import urlparse
         parsed_url = urlparse(url)
+        if parsed_url.username:  # netloc has user@host — malformed (scraped email as URL prefix)
+            continue
         path_lower = parsed_url.path.lower()
         filename = path_lower.split("/")[-1]
         if "download.asp" in path_lower:
