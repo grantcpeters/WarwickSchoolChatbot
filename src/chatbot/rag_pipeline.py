@@ -121,9 +121,12 @@ async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[s
     context = "\n\n---\n\n".join(c["content"] for c in chunks)
 
     # Deduplicate sources by URL, preserving the best title found.
+    # Only include sources that look like real URLs (skip stale index docs with hash IDs).
     seen: dict[str, str] = {}
     for c in chunks:
         url = c["source"]
+        if not url.startswith("http"):
+            continue
         if url not in seen or (not seen[url] and c["title"]):
             seen[url] = c["title"]
 
