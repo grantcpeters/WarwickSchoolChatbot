@@ -9,15 +9,45 @@ interface Message {
   sources?: { url: string; title: string }[];
 }
 
-const SUGGESTED = [
-  { icon: '🎓', text: 'What are the admissions requirements?' },
-  { icon: '📚', text: 'Tell me about the curriculum' },
-  { icon: '⭐', text: 'What clubs and activities are available?' },
-  { icon: '📅', text: 'When is the next open day?' },
-  { icon: '🍽️', text: "What's on the lunch menu this week?" },
-  { icon: '💷', text: 'What are the school fees?' },
-  { icon: '🏫', text: 'Tell me about the school facilities' },
+interface PromptDef {
+  icon: string;
+  text: string;
+  category: string;
+}
+
+const ALL_PROMPTS: PromptDef[] = [
+  { icon: '🎓', text: 'What are the admissions requirements?', category: 'Admissions' },
+  { icon: '📅', text: 'When is the next open day?', category: 'Events' },
+  { icon: '💷', text: 'What are the school fees?', category: 'Admissions' },
+  { icon: '📚', text: 'Tell me about the curriculum', category: 'Academic' },
+  { icon: '⭐', text: 'What clubs and activities are available?', category: 'Activities' },
+  { icon: '🍽️', text: "What's on the lunch menu this week?", category: 'Daily Life' },
+  { icon: '🏫', text: 'Tell me about the school facilities', category: 'School' },
+  { icon: '🗓️', text: 'What are the term dates?', category: 'Events' },
+  { icon: '🚌', text: 'Is there a school bus service?', category: 'Transport' },
+  { icon: '📞', text: 'How do I contact the admissions team?', category: 'Admissions' },
+  { icon: '🎽', text: 'What sports are offered?', category: 'Activities' },
+  { icon: '🎭', text: 'Tell me about the arts programme', category: 'Activities' },
 ];
+
+// ── Prompt usage tracking via localStorage ────────────────────────────────
+const COUNTS_KEY = 'tpet_prompt_counts';
+
+function getCounts(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(COUNTS_KEY) || '{}'); }
+  catch { return {}; }
+}
+
+function recordClick(text: string): Record<string, number> {
+  const counts = getCounts();
+  counts[text] = (counts[text] || 0) + 1;
+  try { localStorage.setItem(COUNTS_KEY, JSON.stringify(counts)); } catch {}
+  return counts;
+}
+
+function sortedPrompts(counts: Record<string, number>): PromptDef[] {
+  return [...ALL_PROMPTS].sort((a, b) => (counts[b.text] || 0) - (counts[a.text] || 0));
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
@@ -84,22 +114,22 @@ async function streamChat(
     });
 }
 
-// ?????? Icons ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+// ── Icons ────────────────────────────────────────────────────────────────────
 const SendIcon = () => (
-  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
     <line x1="22" y1="2" x2="11" y2="13" />
     <polygon points="22 2 15 22 11 13 2 9 22 2" />
   </svg>
 );
 
 const SchoolIcon = () => (
-  <svg width="22" height="22" viewBox="0 0 24 24" fill="currentColor">
+  <svg width="20" height="20" viewBox="0 0 24 24" fill="currentColor">
     <path d="M12 3L1 9l4 2.18V16c0 1.1.9 2 2 2h10c1.1 0 2-.9 2-2v-4.82L21 9l-9-6zm5 13H7v-3.99l5 2.72 5-2.72V16zm-5-4.28L3.53 9 12 4.28 20.47 9 12 11.72z" />
   </svg>
 );
 
 const SunIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <circle cx="12" cy="12" r="5"/>
     <line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/>
     <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
@@ -109,15 +139,35 @@ const SunIcon = () => (
 );
 
 const MoonIcon = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
     <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
   </svg>
 );
 
-// ── Responsive table: stacked cards on mobile, scrollable on desktop ─────────
+const TrashIcon = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="3 6 5 6 21 6"/>
+    <path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/>
+    <path d="M10 11v6"/><path d="M14 11v6"/>
+    <path d="M9 6V4h6v2"/>
+  </svg>
+);
+
+const SparkleIcon = () => (
+  <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+    <path d="M12 2l2.4 7.4H22l-6.2 4.5 2.4 7.4L12 17l-6.2 4.3 2.4-7.4L2 9.4h7.6z"/>
+  </svg>
+);
+
+const CloseIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
+    <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+  </svg>
+);
+
+// ── Responsive table ──────────────────────────────────────────────────────────
 function ResponsiveTable({ children }: { children?: React.ReactNode; [k: string]: unknown }) {
   const headers: string[] = [];
-
   React.Children.forEach(children, (section) => {
     if (!React.isValidElement(section)) return;
     const el = section as React.ReactElement<any>;
@@ -128,14 +178,10 @@ function ResponsiveTable({ children }: { children?: React.ReactNode; [k: string]
       React.Children.forEach(tr.props.children, (cell) => {
         if (!React.isValidElement(cell)) return;
         const th = cell as React.ReactElement<any>;
-        const label = React.Children.toArray(th.props.children)
-          .map((c) => (typeof c === 'string' ? c : ''))
-          .join('');
-        headers.push(label);
+        headers.push(React.Children.toArray(th.props.children).map(c => typeof c === 'string' ? c : '').join(''));
       });
     });
   });
-
   const processedChildren = React.Children.map(children, (section) => {
     if (!React.isValidElement(section)) return section;
     const el = section as React.ReactElement<any>;
@@ -151,24 +197,20 @@ function ResponsiveTable({ children }: { children?: React.ReactNode; [k: string]
     });
     return React.cloneElement(el, {}, rows);
   });
-
-  return (
-    <div className="responsive-table-wrapper">
-      <table>{processedChildren}</table>
-    </div>
-  );
+  return <div className="responsive-table-wrapper"><table>{processedChildren}</table></div>;
 }
 
-// ?????? App ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
+// ── App ───────────────────────────────────────────────────────────────────────
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [showDrawer, setShowDrawer] = useState(false);
+  const [counts, setCounts] = useState<Record<string, number>>(getCounts);
   const [darkMode, setDarkMode] = useState<boolean>(() => {
     try {
-      const stored = localStorage.getItem('theme');
-      if (stored) return stored === 'dark';
-      return window.matchMedia('(prefers-color-scheme: dark)').matches;
+      const s = localStorage.getItem('theme');
+      return s ? s === 'dark' : window.matchMedia('(prefers-color-scheme: dark)').matches;
     } catch { return false; }
   });
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -179,40 +221,31 @@ export default function App() {
     try { localStorage.setItem('theme', darkMode ? 'dark' : 'light'); } catch {}
   }, [darkMode]);
 
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [messages]);
 
-  // Auto-resize textarea
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height =
-        Math.min(textareaRef.current.scrollHeight, 120) + 'px';
+      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 100) + 'px';
     }
   }, [input]);
 
   const sendMessage = async (override?: string) => {
     const text = (override ?? input).trim();
     if (!text || isLoading) return;
-
-    setMessages(prev => [...prev, { role: 'user', content: text }]);
     setInput('');
+    setShowDrawer(false);
+    setMessages(prev => [...prev, { role: 'user', content: text }, { role: 'assistant', content: '' }]);
     setIsLoading(true);
-    setMessages(prev => [...prev, { role: 'assistant', content: '' }]);
-
     try {
       const sources = await streamChat(text, messages, token => {
         setMessages(prev => {
           const updated = [...prev];
           const last = updated[updated.length - 1];
-          if (last.role === 'assistant') {
-            updated[updated.length - 1] = { ...last, content: last.content + token };
-          }
+          if (last?.role === 'assistant') updated[updated.length - 1] = { ...last, content: last.content + token };
           return updated;
         });
       });
-
       if (sources.length > 0) {
         setMessages(prev => {
           const updated = [...prev];
@@ -223,10 +256,7 @@ export default function App() {
     } catch {
       setMessages(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = {
-          ...updated[updated.length - 1],
-          content: 'Sorry, something went wrong. Please try again.',
-        };
+        updated[updated.length - 1] = { ...updated[updated.length - 1], content: 'Sorry, something went wrong. Please try again.' };
         return updated;
       });
     } finally {
@@ -234,152 +264,226 @@ export default function App() {
     }
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault();
-      sendMessage();
-    }
+  const handlePromptClick = (text: string) => {
+    const newCounts = recordClick(text);
+    setCounts(newCounts);
+    sendMessage(text);
   };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); sendMessage(); }
+  };
+
+  const sorted = sortedPrompts(counts);
+  // Prompts clicked at least once, sorted by frequency — shown in "Popular" section
+  const popular = sorted.filter(p => counts[p.text] > 0).slice(0, 4);
+  // Remaining prompts for the "More" list
+  const remaining = sorted.filter(p => !popular.includes(p));
+  // Chip strip: top 6 sorted prompts shown inline when in conversation
+  const chipPrompts = sorted.slice(0, 6);
 
   return (
     <div className="app">
-      {/* ?????? Sidebar ?????? */}
-      <aside className="sidebar">
-        <div className="sidebar__brand">
-          <div className="sidebar__logo"><SchoolIcon /></div>
-          <div>
-            <div className="sidebar__school-name">Teachers Pet</div>
-            <div className="sidebar__tagline">By GrantESoft</div>
+
+      {/* ── Header ── */}
+      <header className="header">
+        <div className="header__brand">
+          <div className="header__avatar"><SchoolIcon /></div>
+          <div className="header__info">
+            <span className="header__name">Teachers Pet</span>
+            <span className="header__status">
+              <span className="header__status-dot" />
+              Warwick Prep School
+            </span>
           </div>
         </div>
+        <div className="header__actions">
+          {messages.length > 0 && (
+            <button className="header__btn" onClick={() => setMessages([])} aria-label="Clear chat">
+              <TrashIcon />
+            </button>
+          )}
+          <button className="header__btn" onClick={() => setDarkMode(d => !d)} aria-label="Toggle dark mode">
+            {darkMode ? <SunIcon /> : <MoonIcon />}
+          </button>
+        </div>
+      </header>
 
-        <div className="sidebar__divider" />
-        <div className="sidebar__section-title">Quick questions</div>
+      {/* ── Chat / Welcome ── */}
+      <div className="chat-area">
+        {messages.length === 0 ? (
+          <div className="welcome">
+            <div className="welcome__logo"><SchoolIcon /></div>
+            <h1 className="welcome__title">How can I help?</h1>
+            <p className="welcome__sub">
+              Ask me anything about Warwick Prep School — admissions, curriculum, events and more.
+            </p>
 
-        <div className="sidebar__suggestions">
-          {SUGGESTED.map((s, i) => (
-            <button key={i} className="sidebar__suggestion" onClick={() => sendMessage(s.text)}>
-              <span className="sidebar__suggestion-icon">{s.icon}</span>
-              <span>{s.text}</span>
+            {popular.length > 0 && (
+              <>
+                <span className="welcome__section-label">🔥 Popular with you</span>
+                <div className="welcome__popular">
+                  {popular.map((p, i) => (
+                    <button key={i} className="welcome__popular-card welcome__popular-card--hot" onClick={() => handlePromptClick(p.text)}>
+                      <span className="welcome__card-badge">Popular</span>
+                      <span className="welcome__card-icon">{p.icon}</span>
+                      <span className="welcome__card-text">{p.text}</span>
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <span className="welcome__section-label">
+              {popular.length > 0 ? 'More questions' : 'Try asking'}
+            </span>
+
+            {popular.length === 0 ? (
+              <div className="welcome__popular">
+                {sorted.slice(0, 6).map((p, i) => (
+                  <button key={i} className="welcome__popular-card" onClick={() => handlePromptClick(p.text)}>
+                    <span className="welcome__card-icon">{p.icon}</span>
+                    <span className="welcome__card-text">{p.text}</span>
+                  </button>
+                ))}
+              </div>
+            ) : (
+              <div className="welcome__more">
+                {remaining.slice(0, 5).map((p, i) => (
+                  <button key={i} className="welcome__more-item" onClick={() => handlePromptClick(p.text)}>
+                    <span>{p.icon}</span>
+                    <span>{p.text}</span>
+                  </button>
+                ))}
+                <button className="welcome__more-item welcome__more-item--all" onClick={() => setShowDrawer(true)}>
+                  <SparkleIcon />
+                  <span>View all questions…</span>
+                </button>
+              </div>
+            )}
+          </div>
+        ) : (
+          <div className="messages">
+            {messages.map((msg, i) => (
+              <div key={i} className={`message message--${msg.role}`}>
+                {msg.role === 'assistant' && (
+                  <div className="message__avatar message__avatar--assistant"><SchoolIcon /></div>
+                )}
+                <div className="message__body">
+                  <div className="message__bubble">
+                    {msg.role === 'assistant' ? (
+                      msg.content === '' && isLoading && i === messages.length - 1 ? (
+                        <div className="typing"><span /><span /><span /></div>
+                      ) : (
+                        <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ResponsiveTable as any }}>
+                          {msg.content}
+                        </ReactMarkdown>
+                      )
+                    ) : msg.content}
+                  </div>
+                  {msg.sources && msg.sources.length > 0 && (
+                    <div className="message__sources">
+                      {msg.sources.map((s, j) => (
+                        <a key={j} href={s.url.startsWith('http') ? s.url : `https://${s.url}`}
+                          target="_blank" rel="noopener noreferrer" className="source-chip">
+                          🔗 {s.title}
+                        </a>
+                      ))}
+                    </div>
+                  )}
+                </div>
+                {msg.role === 'user' && (
+                  <div className="message__avatar message__avatar--user">U</div>
+                )}
+              </div>
+            ))}
+            <div ref={bottomRef} />
+          </div>
+        )}
+      </div>
+
+      {/* ── Horizontal chip strip — visible during conversation ── */}
+      {messages.length > 0 && (
+        <div className="chips-strip">
+          <button className="chip chip--expand" onClick={() => setShowDrawer(true)}>
+            <SparkleIcon /> All
+          </button>
+          {chipPrompts.map((p, i) => (
+            <button key={i}
+              className={`chip${counts[p.text] > 0 ? ' chip--used' : ''}`}
+              onClick={() => handlePromptClick(p.text)}>
+              {p.icon} {p.text.length > 26 ? p.text.slice(0, 24) + '…' : p.text}
             </button>
           ))}
         </div>
+      )}
 
-        <div className="sidebar__footer">
-          <a href="https://www.warwickprep.com" target="_blank" rel="noopener noreferrer" className="sidebar__link">
-            warwickprep.com →
-          </a>
-          <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label="Toggle dark mode">
-            {darkMode ? <SunIcon /> : <MoonIcon />}
+      {/* ── Input ── */}
+      <div className="input-area">
+        <div className="input-bar">
+          <textarea
+            ref={textareaRef}
+            value={input}
+            onChange={e => setInput(e.target.value)}
+            onKeyDown={handleKeyDown}
+            placeholder="Ask Teachers Pet anything…"
+            disabled={isLoading}
+            rows={1}
+            className="input-bar__textarea"
+          />
+          <button onClick={() => sendMessage()} disabled={isLoading || !input.trim()}
+            className="input-bar__send" aria-label="Send">
+            <SendIcon />
           </button>
         </div>
-      </aside>
+        <p className="input-area__hint">Enter to send · Shift+Enter for new line</p>
+      </div>
 
-      {/* ?????? Main ?????? */}
-      <div className="main">
-        {/* Mobile header */}
-        <header className="mobile-header">
-          <div className="mobile-header__brand">
-            <SchoolIcon />
-            <span>Teachers Pet</span>
-          </div>
-          <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label="Toggle dark mode">
-            {darkMode ? <SunIcon /> : <MoonIcon />}
-          </button>
-        </header>
-
-        {/* Chat area */}
-        <div className="chat-area">
-          {messages.length === 0 ? (
-            <div className="welcome">
-              <div className="welcome__icon"><SchoolIcon /></div>
-              <h1 className="welcome__title">How can I help you today?</h1>
-              <p className="welcome__subtitle">
-                Ask me anything about Warwick Prep School — admissions, curriculum, events, and more. Powered by Teachers Pet.
-              </p>
-              <div className="welcome__chips">
-                {SUGGESTED.map((s, i) => (
-                  <button key={i} className="welcome__chip" onClick={() => sendMessage(s.text)}>
-                    <span>{s.icon}</span>
-                    <span>{s.text}</span>
+      {/* ── Prompts drawer (bottom sheet) ── */}
+      {showDrawer && (
+        <>
+          <div className="drawer-overlay" onClick={() => setShowDrawer(false)} />
+          <div className="drawer" role="dialog" aria-modal="true" aria-label="Quick questions">
+            <div className="drawer__handle" />
+            <div className="drawer__header">
+              <span className="drawer__title">Quick questions</span>
+              <button className="drawer__close" onClick={() => setShowDrawer(false)} aria-label="Close">
+                <CloseIcon />
+              </button>
+            </div>
+            <div className="drawer__body">
+              {popular.length > 0 && (
+                <>
+                  <p className="drawer__section-label">🔥 Your most used</p>
+                  <div className="drawer__popular-grid">
+                    {popular.map((p, i) => (
+                      <button key={i} className="drawer__popular-card" onClick={() => handlePromptClick(p.text)}>
+                        <span className="drawer__popular-icon">{p.icon}</span>
+                        <span className="drawer__popular-text">{p.text}</span>
+                        <span className="drawer__popular-count">Used {counts[p.text]}×</span>
+                      </button>
+                    ))}
+                  </div>
+                </>
+              )}
+              <p className="drawer__section-label">All questions</p>
+              <div className="drawer__list">
+                {sorted.map((p, i) => (
+                  <button key={i} className="drawer__item" onClick={() => handlePromptClick(p.text)}>
+                    <span className="drawer__item-icon">{p.icon}</span>
+                    <span className="drawer__item-text">{p.text}</span>
+                    {counts[p.text] > 0 && (
+                      <span className="drawer__item-count">{counts[p.text]}×</span>
+                    )}
                   </button>
                 ))}
               </div>
             </div>
-          ) : (
-            <div className="messages">
-              {messages.map((msg, i) => (
-                <div key={i} className={`message message--${msg.role}`}>
-                  {msg.role === 'assistant' && (
-                    <div className="message__avatar message__avatar--assistant">
-                      <SchoolIcon />
-                    </div>
-                  )}
-                  <div className="message__body">
-                    <div className="message__bubble">
-                      {msg.role === 'assistant' ? (
-                        msg.content === '' && isLoading && i === messages.length - 1 ? (
-                          <div className="typing"><span /><span /><span /></div>
-                        ) : (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ResponsiveTable as any }}>{msg.content}</ReactMarkdown>
-                        )
-                      ) : (
-                        msg.content
-                      )}
-                    </div>
-                    {msg.sources && msg.sources.length > 0 && (
-                      <div className="message__sources">
-                        {msg.sources.map((s, j) => (
-                          <a
-                            key={j}
-                            href={s.url.startsWith('http') ? s.url : `https://${s.url}`}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="source-chip"
-                          >
-                            🔗 {s.title}
-                          </a>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                  {msg.role === 'user' && (
-                    <div className="message__avatar message__avatar--user">U</div>
-                  )}
-                </div>
-              ))}
-              <div ref={bottomRef} />
-            </div>
-          )}
-        </div>
-
-        {/* Input */}
-        <div className="input-wrapper">
-          <div className="input-bar">
-            <textarea
-              ref={textareaRef}
-              value={input}
-              onChange={e => setInput(e.target.value)}
-              onKeyDown={handleKeyDown}
-              placeholder="Ask Teachers Pet anything…"
-              disabled={isLoading}
-              rows={1}
-              className="input-bar__textarea"
-            />
-            <button
-              onClick={() => sendMessage()}
-              disabled={isLoading || !input.trim()}
-              className="input-bar__send"
-              aria-label="Send message"
-            >
-              <SendIcon />
-            </button>
           </div>
-          <p className="input-bar__hint">Enter to send · Shift+Enter for new line</p>
-        </div>
-      </div>
+        </>
+      )}
+
     </div>
   );
 }
-
 

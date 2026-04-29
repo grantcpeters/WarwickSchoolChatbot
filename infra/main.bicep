@@ -25,6 +25,7 @@ var openAiAccountName = '${prefix}-${uniqueSuffix}-openai'
 var docIntelligenceName = '${prefix}-${uniqueSuffix}-docintel'
 var appServicePlanName = '${prefix}-${uniqueSuffix}-plan'
 var webAppName = '${prefix}-${uniqueSuffix}-web'
+var logAnalyticsWorkspaceName = '${prefix}-${uniqueSuffix}-logs'
 
 // ── Storage Account ──────────────────────────────────────────
 resource storageAccount 'Microsoft.Storage/storageAccounts@2023-01-01' = {
@@ -119,6 +120,72 @@ resource docIntelligence 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
   }
 }
 
+// ── Log Analytics Workspace ──────────────────────────────────
+resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10-01' = {
+  name: logAnalyticsWorkspaceName
+  location: location
+  properties: {
+    sku: { name: 'PerGB2018' }
+    retentionInDays: 90
+  }
+}
+
+// ── Application Insights ──────────────────────────────────────
+// Diagnostic settings route all telemetry through Log Analytics directly
+// (no SDK changes needed in the application).
+
+// Captures every HTTP request: URL, status, client IP, user-agent (platform/browser),
+// response time, and bytes — zero code required.
+resource webAppDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = if (deployWebApp) {
+  name: 'appservice-logs'
+  scope: webApp!
+  properties: {
+    workspaceId: logAnalyticsWorkspace.id
+    logs: [
+      {
+        category: 'AppServiceHTTPLogs'
+        enabled: true
+      }
+      {
+        category: 'AppServiceConsoleLogs'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
+// Captures every Azure OpenAI API call: model used, prompt tokens, completion tokens,
+// and the full request/response body (including the prompt text).
+resource openAiDiagnostics 'Microsoft.Insights/diagnosticSettings@2021-05-01-preview' = {
+  name: 'openai-request-logs'
+  scope: openAiAccount
+  properties: {
+    workspaceId: logAnalyticsWorkspace.id
+    logs: [
+      {
+        category: 'Audit'
+        enabled: true
+      }
+      {
+        category: 'RequestResponse'
+        enabled: true
+      }
+    ]
+    metrics: [
+      {
+        category: 'AllMetrics'
+        enabled: true
+      }
+    ]
+  }
+}
+
 // ── Azure App Service ─────────────────────────────────────────
 resource appServicePlan 'Microsoft.Web/serverfarms@2023-12-01' = if (deployWebApp) {
   name: appServicePlanName
@@ -199,3 +266,4 @@ output openAiEndpoint string = openAiAccount.properties.endpoint
 output docIntelEndpoint string = docIntelligence.properties.endpoint
 output webAppName string = deployWebApp ? webApp!.name : ''
 output webAppUrl string = deployWebApp ? 'https://${webApp!.properties.defaultHostName}' : ''
+output logAnalyticsWorkspaceName string = logAnalyticsWorkspace.name

@@ -20,12 +20,12 @@ from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
+load_dotenv()
+
 logging.basicConfig(level=logging.INFO)
 log = logging.getLogger(__name__)
 
 from src.chatbot.rag_pipeline import chat
-
-load_dotenv()
 
 MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
 
