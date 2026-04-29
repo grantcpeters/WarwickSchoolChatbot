@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import './App.css';
 
 interface Message {
@@ -274,7 +275,7 @@ export default function App() {
                         msg.content === '' && isLoading && i === messages.length - 1 ? (
                           <div className="typing"><span /><span /><span /></div>
                         ) : (
-                          <ReactMarkdown>{msg.content}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
                         )
                       ) : (
                         msg.content
