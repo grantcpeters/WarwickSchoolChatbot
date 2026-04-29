@@ -5,7 +5,7 @@ import './App.css';
 interface Message {
   role: 'user' | 'assistant';
   content: string;
-  sources?: string[];
+  sources?: { url: string; title: string }[];
 }
 
 const SUGGESTED = [
@@ -19,11 +19,25 @@ const SUGGESTED = [
 
 const API_BASE = import.meta.env.VITE_API_URL || '';
 
+/** Derive a human-readable label from a URL path as a fallback when no title is stored. */
+function urlToLabel(url: string): string {
+  try {
+    const { pathname } = new URL(url.startsWith('http') ? url : `https://${url}`);
+    const segments = pathname.split('/').filter(Boolean);
+    if (segments.length === 0) return 'Warwick Prep School';
+    return segments[segments.length - 1]
+      .replace(/-/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  } catch {
+    return url;
+  }
+}
+
 async function streamChat(
   message: string,
   history: Message[],
   onToken: (token: string) => void
-): Promise<string[]> {
+): Promise<{ url: string; title: string }[]> {
   const response = await fetch(`${API_BASE}/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -50,7 +64,17 @@ async function streamChat(
   }
 
   const sourceMatch = full.match(/__sources__:(.+)$/);
-  return sourceMatch ? sourceMatch[1].split(',').map(s => s.trim()).filter(Boolean) : [];
+  if (!sourceMatch) return [];
+  return sourceMatch[1]
+    .split(',')
+    .map(s => s.trim())
+    .filter(Boolean)
+    .map(part => {
+      const sepIdx = part.indexOf(':::');
+      const url = sepIdx >= 0 ? part.slice(0, sepIdx).trim() : part;
+      const rawTitle = sepIdx >= 0 ? part.slice(sepIdx + 3).trim() : '';
+      return { url, title: rawTitle || urlToLabel(url) };
+    });
 }
 
 // ?????? Icons ??????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
@@ -222,12 +246,12 @@ export default function App() {
                         {msg.sources.map((s, j) => (
                           <a
                             key={j}
-                            href={s.startsWith('http') ? s : `https://${s}`}
+                            href={s.url.startsWith('http') ? s.url : `https://${s.url}`}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="source-chip"
                           >
-                            ???? {s}
+                            🔗 {s.title}
                           </a>
                         ))}
                       </div>

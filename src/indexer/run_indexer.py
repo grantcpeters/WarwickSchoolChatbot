@@ -95,6 +95,7 @@ def ensure_search_index(index_client: SearchIndexClient) -> None:
         SearchableField(name="content", type=SearchFieldDataType.String),
         SimpleField(name="source_url", type=SearchFieldDataType.String, filterable=True),
         SimpleField(name="source_type", type=SearchFieldDataType.String, filterable=True),
+        SimpleField(name="page_title", type=SearchFieldDataType.String, filterable=False),
         SimpleField(name="chunk_index", type=SearchFieldDataType.Int32),
         SearchField(
             name="content_vector",
@@ -125,7 +126,9 @@ def ensure_search_index(index_client: SearchIndexClient) -> None:
         index_client.create_index(index)
         log.info("Created search index: %s", INDEX_NAME)
     else:
-        log.info("Search index already exists: %s", INDEX_NAME)
+        # create_or_update_index safely adds new fields to an existing index.
+        index_client.create_or_update_index(index)
+        log.info("Updated search index schema: %s", INDEX_NAME)
 
 
 def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVERLAP) -> list[str]:
@@ -174,6 +177,33 @@ def extract_html_text(html_bytes: bytes) -> str:
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
     return soup.get_text(separator=" ", strip=True)
+
+
+# Suffixes stripped from <title> tags to get a clean page name.
+_TITLE_STRIP = [
+    " | Warwick Preparatory School",
+    " - Warwick Preparatory School",
+    " | Warwick Prep School",
+    " - Warwick Prep School",
+    " | Warwick Prep",
+    " - Warwick Prep",
+]
+
+
+def extract_html_title(html_bytes: bytes) -> str:
+    """Return the page title, stripping the site name suffix."""
+    soup = BeautifulSoup(html_bytes, "lxml")
+    tag = soup.find("title")
+    if tag:
+        title = tag.get_text(strip=True)
+        for suffix in _TITLE_STRIP:
+            if suffix.lower() in title.lower():
+                title = title[: title.lower().index(suffix.lower())].strip()
+                break
+        if title:
+            return title
+    h1 = soup.find("h1")
+    return h1.get_text(strip=True) if h1 else ""
 
 
 def extract_pdf_text(doc_intel: DocumentIntelligenceClient, pdf_bytes: bytes) -> str:
@@ -273,6 +303,7 @@ def run_indexer() -> None:
         container = CONTAINER_PDF if source_type == "pdf" else CONTAINER_RAW
         data = download_blob(blob_client, container, blob_name)
         text = extract_pdf_text(doc_intel_client, data) if source_type == "pdf" else extract_html_text(data)
+        page_title = extract_html_title(data) if source_type == "html" else ""
         chunks = chunk_text(text)
         if not chunks:
             index_state[blob_name] = {
@@ -290,6 +321,7 @@ def run_indexer() -> None:
                 "content": chunk,
                 "source_url": source_url,
                 "source_type": source_type,
+                "page_title": page_title,
                 "chunk_index": i,
                 "content_vector": vector,
             })
