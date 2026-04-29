@@ -6,19 +6,13 @@ from unittest.mock import AsyncMock, patch, MagicMock
 @pytest.mark.asyncio
 async def test_retrieve_returns_results():
     mock_results = [
-        {"content": "Warwick Prep School was founded in 1879.", "source_url": "about.html", "source_type": "html"}
+        {"content": "Warwick Prep School was founded in 1879.", "source_url": "about.html", "source_type": "html", "page_title": "About"}
     ]
 
-    async def mock_search(*args, **kwargs):
-        class MockResults:
-            def __aiter__(self):
-                return iter(mock_results).__aiter__() if hasattr(iter(mock_results), '__aiter__') else self
-
-            async def __aiter__(self):
-                for r in mock_results:
-                    yield r
-
-        return MockResults()
+    class MockResults:
+        async def __aiter__(self):
+            for r in mock_results:
+                yield r
 
     with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
          patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
@@ -32,7 +26,7 @@ async def test_retrieve_returns_results():
         mock_search_instance = AsyncMock()
         mock_search_instance.__aenter__ = AsyncMock(return_value=mock_search_instance)
         mock_search_instance.__aexit__ = AsyncMock(return_value=False)
-        mock_search_instance.search.return_value = mock_search(*args, **{})
+        mock_search_instance.search.return_value = MockResults()
         mock_search_cls.return_value = mock_search_instance
 
         from src.chatbot.rag_pipeline import retrieve
