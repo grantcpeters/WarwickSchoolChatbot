@@ -87,27 +87,26 @@ async def _embed(openai: AsyncAzureOpenAI, text: str) -> list[float]:
 
 
 async def retrieve(query: str) -> list[dict]:
-    """Hybrid search: vector + keyword, with admissions-path boost."""
+    """Hybrid search: vector + keyword, with admissions-path boost.
+
+    For event/date queries, a supplemental keyword search is run specifically
+    targeting /admissions/ pages, since news posts tend to outrank them on
+    keyword density alone.
+    """
     openai = _get_openai()
     vector = await _embed(openai, query)
 
-    async with _get_search() as search_client:
-        vector_query = VectorizedQuery(
-            vector=vector,
-            k_nearest_neighbors=TOP_K_RETRIEVE,
-            fields="content_vector",
-        )
-        # Try selecting page_title (added in a later schema migration).
-        # Fall back gracefully if the field doesn't exist yet in the index.
-        select_fields = ["content", "source_url", "source_type", "page_title"]
+    select_fields = ["content", "source_url", "source_type", "page_title"]
+
+    async def _do_search(search_client, text: str, vec_query, n: int, fields: list[str]) -> list[dict]:
         try:
             results = await search_client.search(
-                search_text=query,
-                vector_queries=[vector_query],
-                top=TOP_K_RETRIEVE,
-                select=select_fields,
+                search_text=text,
+                vector_queries=[vec_query],
+                top=n,
+                select=fields,
             )
-            raw = [
+            return [
                 {
                     "content": r["content"],
                     "source": r["source_url"],
@@ -119,14 +118,14 @@ async def retrieve(query: str) -> list[dict]:
         except Exception as e:
             if "page_title" not in str(e):
                 raise
-            # page_title field not yet in index schema — retry without it
+            # page_title not yet in index — retry without it
             results = await search_client.search(
-                search_text=query,
-                vector_queries=[vector_query],
-                top=TOP_K_RETRIEVE,
+                search_text=text,
+                vector_queries=[vec_query],
+                top=n,
                 select=["content", "source_url", "source_type"],
             )
-            raw = [
+            return [
                 {
                     "content": r["content"],
                     "source": r["source_url"],
@@ -135,6 +134,34 @@ async def retrieve(query: str) -> list[dict]:
                 }
                 async for r in results
             ]
+
+    async with _get_search() as search_client:
+        vector_query = VectorizedQuery(
+            vector=vector,
+            k_nearest_neighbors=TOP_K_RETRIEVE,
+            fields="content_vector",
+        )
+        raw = await _do_search(search_client, query, vector_query, TOP_K_RETRIEVE, select_fields)
+
+        # For event/date queries, run a supplemental keyword search targeting
+        # /admissions/ pages. These are sparse pages that rarely win on keyword
+        # density but hold the authoritative information about events.
+        _EVENT_KW = ("open day", "open morning", "visit", "term date", "term dates",
+                     "holiday", "school event", "open afternoon")
+        if any(kw in query.lower() for kw in _EVENT_KW):
+            supp_vq = VectorizedQuery(
+                vector=vector,
+                k_nearest_neighbors=5,
+                fields="content_vector",
+            )
+            supp = await _do_search(
+                search_client, f"admissions {query}", supp_vq, 5, select_fields
+            )
+            # Only keep chunks that are actually from the admissions section
+            admissions_chunks = [c for c in supp if "/admissions/" in c["source"].lower()]
+            if admissions_chunks:
+                seen_urls = {c["source"] for c in admissions_chunks}
+                raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
 
     # Re-rank: boost chunks from canonical section pages (/admissions/, /information/, etc.)
     # over news/blog posts which may contain outdated event info.
