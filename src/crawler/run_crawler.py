@@ -61,11 +61,19 @@ def delete_blob_if_exists(client: BlobServiceClient, container: str, blob_name: 
 
 
 def url_to_blob_name(url: str) -> str:
-    """Convert a URL to a safe blob name."""
+    """Convert a URL to a safe blob name.
+    
+    Query strings are included as a short hash so that URLs like
+    /attachments/download.asp?file=978&type=pdf and ?file=979 get
+    distinct blob names instead of both mapping to download.asp.
+    """
     parsed = urlparse(url)
     path = parsed.path.strip("/") or "index"
     # Replace unsafe chars
     path = re.sub(r"[^a-zA-Z0-9/_.-]", "_", path)
+    if parsed.query:
+        q_hash = hashlib.md5(parsed.query.encode()).hexdigest()[:8]
+        path = f"{path}_{q_hash}"
     return path
 
 
@@ -135,7 +143,12 @@ def crawl() -> None:
             continue
 
         content_type = resp.headers.get("content-type", "")
-        is_pdf = "pdf" in content_type or url.lower().endswith(".pdf")
+        is_pdf = (
+            "pdf" in content_type
+            or url.lower().endswith(".pdf")
+            or "type=pdf" in url.lower()
+            or resp.content[:4] == b"%PDF"
+        )
         source_type = "pdf" if is_pdf else "html"
         blob_name = url_to_blob_name(url) + (".pdf" if is_pdf else ".html")
         content_hash = hash_content(resp.content)
