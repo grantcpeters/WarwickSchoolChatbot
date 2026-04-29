@@ -141,17 +141,29 @@ def chunk_text(text: str, chunk_size: int = CHUNK_SIZE, overlap: int = CHUNK_OVE
     return [c for c in chunks if c.strip()]
 
 
+# At 120K TPM: 16 chunks × ~680 tokens ≈ 10K tokens per batch.
+# 6s delay → ~10 batches/min → ~100K TPM, safely under the 120K limit.
+# The while-True retry in embed() handles any residual 429s without giving up.
 EMBED_BATCH_SIZE = 16
-EMBED_BATCH_DELAY = 2.0  # seconds between batches to stay within S0 rate limits
+EMBED_BATCH_DELAY = 6.0
+CHECKPOINT_EVERY = 10  # save index state to blob after every N pages
 
 
 def embed(openai_client: AzureOpenAI, texts: list[str]) -> list[list[float]]:
-    """Embed texts in small batches with a delay to avoid 429 rate limits."""
+    """Embed texts in batches. Retries indefinitely on 429 with a 65-second back-off."""
+    from openai import RateLimitError
+
     all_embeddings: list[list[float]] = []
     for i in range(0, len(texts), EMBED_BATCH_SIZE):
         batch = texts[i : i + EMBED_BATCH_SIZE]
-        response = openai_client.embeddings.create(model=EMBEDDING_DEPLOYMENT, input=batch)
-        all_embeddings.extend(item.embedding for item in response.data)
+        while True:
+            try:
+                response = openai_client.embeddings.create(model=EMBEDDING_DEPLOYMENT, input=batch)
+                all_embeddings.extend(item.embedding for item in response.data)
+                break
+            except RateLimitError:
+                log.warning("429 rate limit — sleeping 65 s before retry")
+                time.sleep(65)
         if i + EMBED_BATCH_SIZE < len(texts):
             time.sleep(EMBED_BATCH_DELAY)
     return all_embeddings
@@ -223,12 +235,14 @@ def run_indexer() -> None:
     index_client = get_search_index_client()
     search_client = get_search_client()
     crawl_entries = load_crawl_entries(blob_client)
-    previous_index_state = load_json_state(blob_client, CONTAINER_RAW, INDEX_STATE_BLOB_NAME).get("sources", {})
-    next_index_state: dict[str, dict] = {}
+    # Load existing index state — already-indexed pages are skipped (content-hash match).
+    # This makes runs resumable: a failed run picks up where it left off.
+    index_state: dict[str, dict] = load_json_state(blob_client, CONTAINER_RAW, INDEX_STATE_BLOB_NAME).get("sources", {})
 
     ensure_search_index(index_client)
 
     batch: list[dict] = []
+    pages_since_checkpoint = 0
 
     def flush_batch():
         if batch:
@@ -236,18 +250,24 @@ def run_indexer() -> None:
             log.info("Indexed %d chunks", len(batch))
             batch.clear()
 
+    def checkpoint():
+        """Persist current index state so the next run can skip already-done pages."""
+        flush_batch()
+        save_json_state(blob_client, CONTAINER_RAW, INDEX_STATE_BLOB_NAME, {"sources": index_state})
+        log.info("Checkpoint saved (%d sources indexed so far)", len(index_state))
+
     for entry in crawl_entries:
         blob_name = entry["blob_name"]
         source_type = entry["source_type"]
         source_url = entry.get("url", blob_name)
         source_hash = entry.get("content_hash")
-        previous_source_state = previous_index_state.get(blob_name)
-        if previous_source_state and previous_source_state.get("content_hash") == source_hash:
-            next_index_state[blob_name] = previous_source_state
+        existing = index_state.get(blob_name)
+        if existing and existing.get("content_hash") == source_hash:
+            # Already indexed and unchanged — skip.
             continue
 
-        if previous_source_state:
-            delete_source_documents(search_client, blob_name, previous_source_state.get("chunk_count", 0))
+        if existing:
+            delete_source_documents(search_client, blob_name, existing.get("chunk_count", 0))
 
         log.info("Processing %s: %s", source_type.upper(), blob_name)
         container = CONTAINER_PDF if source_type == "pdf" else CONTAINER_RAW
@@ -255,7 +275,7 @@ def run_indexer() -> None:
         text = extract_pdf_text(doc_intel_client, data) if source_type == "pdf" else extract_html_text(data)
         chunks = chunk_text(text)
         if not chunks:
-            next_index_state[blob_name] = {
+            index_state[blob_name] = {
                 "chunk_count": 0,
                 "content_hash": source_hash,
                 "source_type": source_type,
@@ -273,31 +293,33 @@ def run_indexer() -> None:
                 "chunk_index": i,
                 "content_vector": vector,
             })
-        next_index_state[blob_name] = {
+        index_state[blob_name] = {
             "chunk_count": len(chunks),
             "content_hash": source_hash,
             "source_type": source_type,
             "source_url": source_url,
         }
+        pages_since_checkpoint += 1
         if len(batch) >= 100:
             flush_batch()
+        if pages_since_checkpoint >= CHECKPOINT_EVERY:
+            checkpoint()
+            pages_since_checkpoint = 0
 
-    removed_sources = set(previous_index_state) - {entry["blob_name"] for entry in crawl_entries}
+    # Clean up pages that were removed from the crawl
+    crawl_blob_names = {entry["blob_name"] for entry in crawl_entries}
+    removed_sources = set(index_state) - crawl_blob_names
     for removed_source in removed_sources:
         delete_source_documents(
             search_client,
             removed_source,
-            previous_index_state[removed_source].get("chunk_count", 0),
+            index_state[removed_source].get("chunk_count", 0),
         )
+        del index_state[removed_source]
 
-    flush_batch()
-    save_json_state(
-        blob_client,
-        CONTAINER_RAW,
-        INDEX_STATE_BLOB_NAME,
-        {"sources": next_index_state},
-    )
-    log.info("Indexing complete.")
+    # Final checkpoint
+    checkpoint()
+    log.info("Indexing complete. %d sources in index.", len(index_state))
 
 
 if __name__ == "__main__":
