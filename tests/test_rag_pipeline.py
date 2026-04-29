@@ -117,6 +117,30 @@ async def test_retrieve_falls_back_when_page_title_missing_from_schema():
         assert results[0]["title"] == ""
 
 
+@pytest.mark.asyncio
+async def test_retrieve_reranks_admissions_before_news():
+    """Canonical admissions pages should be sorted before news/blog posts."""
+    news_chunk = make_search_result(
+        content="Open morning Sept 2024", source_url="https://www.warwickprep.com/news-and-events/open-morning-sept2024"
+    )
+    admissions_chunk = make_search_result(
+        content="Open morning March 2026", source_url="https://www.warwickprep.com/admissions/open-events"
+    )
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        # Search returns news first, then admissions
+        mock_search_cls.return_value = make_search_mock([news_chunk, admissions_chunk])
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("when is the next open day")
+        # After re-ranking, admissions page should come first
+        assert "admissions" in results[0]["source"]
+        assert "news" in results[1]["source"]
+
+
 # ── System prompt ─────────────────────────────────────────────
 
 def test_system_prompt_contains_school_name():

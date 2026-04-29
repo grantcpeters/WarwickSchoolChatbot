@@ -17,7 +17,8 @@ from src.shared.azure_credentials import get_service_credential
 load_dotenv()
 
 INDEX_NAME = os.getenv("AZURE_SEARCH_INDEX_NAME", "warwickprep-content")
-TOP_K = int(os.getenv("RAG_TOP_K", "5"))
+TOP_K_RETRIEVE = int(os.getenv("RAG_TOP_K_RETRIEVE", "12"))  # how many chunks to fetch from search
+TOP_K = int(os.getenv("RAG_TOP_K", "5"))  # how many to pass to the model (after re-ranking)
 CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o-mini")
 EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
@@ -34,6 +35,12 @@ FORMATTING: Always present information in the clearest possible format. When ask
 table, list, schedule, or comparison — always produce one using Markdown (| column | column |). \
 Never say you cannot create tables or formatted output. Formatting school information clearly \
 is a core part of your job.
+
+DATES AND EVENTS: When the context contains multiple references to the same type of event \
+(e.g. open mornings), always identify and report the MOST RECENT one relative to today's date. \
+If all dates in the context are in the past, say so clearly and direct the user to \
+warwickprep.com or admissions. Never report an old date as "the next" event without checking \
+it is actually in the future.
 
 Today's date is {today}.
 If any information in the context refers to specific dates or events (such as open mornings, \
@@ -80,14 +87,14 @@ async def _embed(openai: AsyncAzureOpenAI, text: str) -> list[float]:
 
 
 async def retrieve(query: str) -> list[dict]:
-    """Hybrid search: vector + keyword."""
+    """Hybrid search: vector + keyword, with admissions-path boost."""
     openai = _get_openai()
     vector = await _embed(openai, query)
 
     async with _get_search() as search_client:
         vector_query = VectorizedQuery(
             vector=vector,
-            k_nearest_neighbors=TOP_K,
+            k_nearest_neighbors=TOP_K_RETRIEVE,
             fields="content_vector",
         )
         # Try selecting page_title (added in a later schema migration).
@@ -97,10 +104,10 @@ async def retrieve(query: str) -> list[dict]:
             results = await search_client.search(
                 search_text=query,
                 vector_queries=[vector_query],
-                top=TOP_K,
+                top=TOP_K_RETRIEVE,
                 select=select_fields,
             )
-            return [
+            raw = [
                 {
                     "content": r["content"],
                     "source": r["source_url"],
@@ -116,10 +123,10 @@ async def retrieve(query: str) -> list[dict]:
             results = await search_client.search(
                 search_text=query,
                 vector_queries=[vector_query],
-                top=TOP_K,
+                top=TOP_K_RETRIEVE,
                 select=["content", "source_url", "source_type"],
             )
-            return [
+            raw = [
                 {
                     "content": r["content"],
                     "source": r["source_url"],
@@ -128,6 +135,17 @@ async def retrieve(query: str) -> list[dict]:
                 }
                 async for r in results
             ]
+
+    # Re-rank: boost chunks from canonical section pages (/admissions/, /information/, etc.)
+    # over news/blog posts which may contain outdated event info.
+    _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
+
+    def _rank_key(chunk: dict) -> int:
+        url = chunk["source"].lower()
+        return 1 if any(p in url for p in _NEWS_PATHS) else 0
+
+    raw.sort(key=_rank_key)  # canonical pages first, news posts last
+    return raw[:TOP_K]
 
 
 async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[str]:
