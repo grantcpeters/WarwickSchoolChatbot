@@ -72,21 +72,44 @@ async def retrieve(query: str) -> list[dict]:
             k_nearest_neighbors=TOP_K,
             fields="content_vector",
         )
-        results = await search_client.search(
-            search_text=query,
-            vector_queries=[vector_query],
-            top=TOP_K,
-            select=["content", "source_url", "source_type", "page_title"],
-        )
-        return [
-            {
-                "content": r["content"],
-                "source": r["source_url"],
-                "type": r["source_type"],
-                "title": r.get("page_title") or "",
-            }
-            async for r in results
-        ]
+        # Try selecting page_title (added in a later schema migration).
+        # Fall back gracefully if the field doesn't exist yet in the index.
+        select_fields = ["content", "source_url", "source_type", "page_title"]
+        try:
+            results = await search_client.search(
+                search_text=query,
+                vector_queries=[vector_query],
+                top=TOP_K,
+                select=select_fields,
+            )
+            return [
+                {
+                    "content": r["content"],
+                    "source": r["source_url"],
+                    "type": r["source_type"],
+                    "title": r.get("page_title") or "",
+                }
+                async for r in results
+            ]
+        except Exception as e:
+            if "page_title" not in str(e):
+                raise
+            # page_title field not yet in index schema — retry without it
+            results = await search_client.search(
+                search_text=query,
+                vector_queries=[vector_query],
+                top=TOP_K,
+                select=["content", "source_url", "source_type"],
+            )
+            return [
+                {
+                    "content": r["content"],
+                    "source": r["source_url"],
+                    "type": r["source_type"],
+                    "title": "",
+                }
+                async for r in results
+            ]
 
 
 async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[str]:
