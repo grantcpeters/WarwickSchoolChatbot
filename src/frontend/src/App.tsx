@@ -14,6 +14,7 @@ const SUGGESTED = [
   { icon: '📚', text: 'Tell me about the curriculum' },
   { icon: '⭐', text: 'What clubs and activities are available?' },
   { icon: '📅', text: 'When is the next open day?' },
+  { icon: '🍽️', text: "What's on the lunch menu this week?" },
   { icon: '💷', text: 'What are the school fees?' },
   { icon: '🏫', text: 'Tell me about the school facilities' },
 ];
@@ -309,6 +310,19 @@ export default function App() {
 
         {/* Input */}
         <div className="input-wrapper">
+          {/* Mobile quick-question pill row — hidden on desktop (sidebar handles it) */}
+          <div className="mobile-pills" aria-label="Quick questions">
+            {SUGGESTED.map((s, i) => (
+              <button
+                key={i}
+                className="mobile-pill"
+                onClick={() => !isLoading && sendMessage(s.text)}
+                disabled={isLoading}
+              >
+                <span>{s.icon}</span> {s.text}
+              </button>
+            ))}
+          </div>
           <div className="input-bar">
             <textarea
               ref={textareaRef}

@@ -633,12 +633,69 @@ body {
 }
 
 /* ─── Responsive ──────────────────────────────────────────────────── */
+/* ─── Mobile quick-question pill row (hidden on desktop) ──────────── */
+.mobile-pills {
+  display: none; /* shown via @media below */
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 0 4px;
+  scrollbar-width: none; /* Firefox */
+  -ms-overflow-style: none;
+}
+
+.mobile-pills::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-pill {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 14px;
+  background: var(--c-surface);
+  border: 1.5px solid var(--c-border);
+  border-radius: 20px;
+  font-family: var(--font);
+  font-size: 0.8rem;
+  color: var(--c-text);
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.mobile-pill:hover:not(:disabled) {
+  background: var(--c-accent-light);
+  border-color: var(--c-accent);
+  color: var(--c-primary);
+}
+
+.mobile-pill:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+[data-theme="dark"] .mobile-pill {
+  background: var(--c-surface-raised);
+  border-color: var(--c-border);
+  color: var(--c-text);
+}
+
+[data-theme="dark"] .mobile-pill:hover:not(:disabled) {
+  background: rgba(201, 168, 76, 0.15);
+  border-color: var(--c-accent);
+}
+
 @media (max-width: 768px) {
   .sidebar {
     display: none;
   }
 
   .mobile-header {
+    display: flex;
+  }
+
+  .mobile-pills {
     display: flex;
   }
 
