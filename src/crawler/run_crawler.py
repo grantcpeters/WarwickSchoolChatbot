@@ -164,11 +164,14 @@ def crawl() -> None:
             "url": url,
         }
 
-        if previous_entry.get("content_hash") == content_hash:
+        target_container = CONTAINER_PDF if is_pdf else CONTAINER_RAW
+        blob_exists = blob_client.get_container_client(target_container).get_blob_client(blob_name).exists()
+        if previous_entry.get("content_hash") == content_hash and blob_exists:
             unchanged_count += 1
         else:
+            if not blob_exists:
+                log.warning("Blob missing from storage, re-uploading: %s/%s", target_container, blob_name)
             changed_count += 1
-            target_container = CONTAINER_PDF if is_pdf else CONTAINER_RAW
             upload_blob(
                 blob_client,
                 target_container,
