@@ -11,6 +11,7 @@ import hashlib
 import logging
 from typing import Iterator
 
+from azure.core.exceptions import ResourceNotFoundError
 from azure.storage.blob import BlobServiceClient
 from azure.ai.documentintelligence import DocumentIntelligenceClient
 from azure.ai.documentintelligence.models import AnalyzeDocumentRequest
@@ -301,7 +302,11 @@ def run_indexer() -> None:
 
         log.info("Processing %s: %s", source_type.upper(), blob_name)
         container = CONTAINER_PDF if source_type == "pdf" else CONTAINER_RAW
-        data = download_blob(blob_client, container, blob_name)
+        try:
+            data = download_blob(blob_client, container, blob_name)
+        except ResourceNotFoundError:
+            log.warning("Blob not found in storage, skipping: %s/%s", container, blob_name)
+            continue
         text = extract_pdf_text(doc_intel_client, data) if source_type == "pdf" else extract_html_text(data)
         page_title = extract_html_title(data) if source_type == "html" else ""
         chunks = chunk_text(text)
