@@ -26,6 +26,39 @@
   --font: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
 }
 
+/* ─── Dark Mode ─────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --c-bg:             #0f172a;
+  --c-surface:        #1e293b;
+  --c-surface-raised: #263447;
+  --c-border:         #334155;
+  --c-text:           #f1f5f9;
+  --c-text-muted:     #94a3b8;
+  --c-bot-bg:         #1e293b;
+  --c-bot-text:       #f1f5f9;
+  --c-accent-light:   #2a1e0a;
+  --shadow-card:      0 1px 4px rgba(0,0,0,0.4), 0 4px 16px rgba(0,0,0,0.3);
+  --shadow-input:     0 2px 8px rgba(0,0,0,0.4);
+}
+
+[data-theme="dark"] .sidebar {
+  background: #0a1929;
+}
+
+[data-theme="dark"] .source-chip:hover { background: #3d2c0f; }
+
+[data-theme="dark"] .message__bubble code {
+  background: rgba(255,255,255,0.1);
+}
+
+[data-theme="dark"] .welcome__chip:hover {
+  box-shadow: 0 4px 16px rgba(0,0,0,0.35);
+}
+
+[data-theme="dark"] .input-bar:focus-within {
+  box-shadow: 0 0 0 3px rgba(26,60,110,0.35), var(--shadow-input);
+}
+
 /* ─── Reset ───────────────────────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -140,6 +173,9 @@ body {
   padding-top: 20px;
   border-top: 1px solid rgba(255,255,255,0.1);
   margin-top: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
 .sidebar__link {
@@ -151,6 +187,27 @@ body {
 }
 
 .sidebar__link:hover { color: rgba(255,255,255,0.85); }
+
+/* ─── Theme toggle ──────────────────────────────────────────── */
+.theme-toggle {
+  background: rgba(255,255,255,0.1);
+  border: none;
+  color: rgba(255,255,255,0.7);
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+  flex-shrink: 0;
+}
+
+.theme-toggle:hover {
+  background: rgba(255,255,255,0.2);
+  color: #fff;
+}
 
 /* ─── Main panel ──────────────────────────────────────────────────── */
 .main {
@@ -168,6 +225,7 @@ body {
   color: #fff;
   padding: 14px 20px;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
   flex-shrink: 0;
 }
