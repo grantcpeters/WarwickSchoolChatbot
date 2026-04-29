@@ -27,7 +27,7 @@ function urlToLabel(url: string): string {
     const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
     const { pathname } = parsed;
     const segments = pathname.split('/').filter(Boolean);
-    if (segments.length === 0) return 'Warwick Prep School';
+    if (segments.length === 0) return 'Teachers Pet';
     const last = segments[segments.length - 1];
     // Hex hash filenames (e.g. ED13E431B4F0ABE4E536FE4074E3ECD2.pdf)
     if (/^[0-9a-f]{16,}\.(pdf|html)$/i.test(last)) return 'School Document';
@@ -248,8 +248,8 @@ export default function App() {
         <div className="sidebar__brand">
           <div className="sidebar__logo"><SchoolIcon /></div>
           <div>
-            <div className="sidebar__school-name">Warwick Prep</div>
-            <div className="sidebar__tagline">School Assistant</div>
+            <div className="sidebar__school-name">Teachers Pet</div>
+            <div className="sidebar__tagline">By GrantESoft</div>
           </div>
         </div>
 
@@ -281,7 +281,7 @@ export default function App() {
         <header className="mobile-header">
           <div className="mobile-header__brand">
             <SchoolIcon />
-            <span>Warwick Prep Assistant</span>
+            <span>Teachers Pet</span>
           </div>
           <button className="theme-toggle" onClick={() => setDarkMode(d => !d)} aria-label="Toggle dark mode">
             {darkMode ? <SunIcon /> : <MoonIcon />}
@@ -295,7 +295,7 @@ export default function App() {
               <div className="welcome__icon"><SchoolIcon /></div>
               <h1 className="welcome__title">How can I help you today?</h1>
               <p className="welcome__subtitle">
-                Ask me anything about Warwick Prep School — admissions, curriculum, events, and more.
+                Ask me anything about Warwick Prep School — admissions, curriculum, events, and more. Powered by Teachers Pet.
               </p>
               <div className="welcome__chips">
                 {SUGGESTED.map((s, i) => (
@@ -361,7 +361,7 @@ export default function App() {
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Ask about Warwick Prep School…"
+              placeholder="Ask Teachers Pet anything…"
               disabled={isLoading}
               rows={1}
               className="input-bar__textarea"
