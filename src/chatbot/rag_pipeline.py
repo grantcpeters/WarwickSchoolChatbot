@@ -23,6 +23,13 @@ TOP_K = int(os.getenv("RAG_TOP_K", "5"))  # how many to pass to the model (after
 CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o-mini")
 EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
 
+# Queries that are likely about school events/dates — triggers admissions-page boost
+# and news-tier demotion so stale blog posts don't outrank canonical pages.
+_EVENT_KW = (
+    "open day", "open morning", "visit", "term date", "term dates",
+    "holiday", "school event", "open afternoon",
+)
+
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are an information assistant exclusively for Warwick Prep School.
 Your sole purpose is to help parents, pupils, and visitors find information about the school.
@@ -185,8 +192,6 @@ async def retrieve(query: str) -> list[dict]:
         # For event/date queries, run a supplemental keyword search targeting
         # /admissions/ pages. These are sparse pages that rarely win on keyword
         # density but hold the authoritative information about events.
-        _EVENT_KW = ("open day", "open morning", "visit", "term date", "term dates",
-                     "holiday", "school event", "open afternoon")
         if any(kw in query.lower() for kw in _EVENT_KW):
             supp_vq = VectorizedQuery(
                 vector=vector,
@@ -203,17 +208,20 @@ async def retrieve(query: str) -> list[dict]:
                 raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
 
     # Re-rank:
-    #  primary   — canonical section pages (/admissions/, /information/) before news/blog
-    #  secondary — within each tier, chunks with more recent dates rank first
+    #  For event/date queries: demote news/blog posts (which contain stale event info)
+    #  below canonical section pages. For all other queries, news/blog content is
+    #  equally valid (e.g. catering blog, clubs blog) so no tier demotion is applied.
+    #  Secondary sort (all queries): chunks mentioning more recent dates rank first.
     _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
+    is_event_query = any(kw in query.lower() for kw in _EVENT_KW)
 
     def _rank_key(chunk: dict) -> tuple:
         url = chunk["source"].lower()
-        path_rank = 1 if any(p in url for p in _NEWS_PATHS) else 0
+        path_rank = (1 if any(p in url for p in _NEWS_PATHS) else 0) if is_event_query else 0
         date_rank = -_most_recent_date(chunk["content"])  # negate: higher ordinal → sorts first
         return (path_rank, date_rank)
 
-    raw.sort(key=_rank_key)  # canonical pages first; most-recent-dated chunks within each tier
+    raw.sort(key=_rank_key)  # for event queries: canonical first; always: most-recent-dated first
     return raw[:TOP_K]
 
 
