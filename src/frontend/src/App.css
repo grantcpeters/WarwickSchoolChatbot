@@ -428,47 +428,50 @@ body {
   font-size: 0.85em;
 }
 
-/* ─── Markdown tables ─────────────────────────────────────────────── */
-.message__bubble table {
-  border-collapse: collapse;
-  width: 100%;
-  margin-bottom: 0.75em;
-  font-size: 0.9em;
+/* ─── Markdown tables — responsive stacked layout ────────────────── */
+.responsive-table-wrapper {
   overflow-x: auto;
-  display: block;
+  margin-bottom: 0.75em;
+  border-radius: var(--r-sm);
 }
 
-.message__bubble thead tr {
+.responsive-table-wrapper table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 0.9em;
+}
+
+.responsive-table-wrapper thead tr {
   background: var(--c-accent-light);
 }
 
-.message__bubble th,
-.message__bubble td {
+.responsive-table-wrapper th,
+.responsive-table-wrapper td {
   border: 1px solid rgba(0, 0, 0, 0.15);
   padding: 6px 12px;
   text-align: left;
   white-space: nowrap;
 }
 
-.message__bubble th {
+.responsive-table-wrapper th {
   font-weight: 600;
   color: var(--c-primary);
 }
 
-.message__bubble tbody tr:nth-child(even) {
+.responsive-table-wrapper tbody tr:nth-child(even) {
   background: rgba(0, 0, 0, 0.03);
 }
 
-[data-theme="dark"] .message__bubble th,
-[data-theme="dark"] .message__bubble td {
+[data-theme="dark"] .responsive-table-wrapper th,
+[data-theme="dark"] .responsive-table-wrapper td {
   border-color: rgba(255, 255, 255, 0.15);
 }
 
-[data-theme="dark"] .message__bubble thead tr {
+[data-theme="dark"] .responsive-table-wrapper thead tr {
   background: rgba(255, 255, 255, 0.08);
 }
 
-[data-theme="dark"] .message__bubble tbody tr:nth-child(even) {
+[data-theme="dark"] .responsive-table-wrapper tbody tr:nth-child(even) {
   background: rgba(255, 255, 255, 0.04);
 }
 
@@ -633,58 +636,6 @@ body {
 }
 
 /* ─── Responsive ──────────────────────────────────────────────────── */
-/* ─── Mobile quick-question pill row (hidden on desktop) ──────────── */
-.mobile-pills {
-  display: none; /* shown via @media below */
-  gap: 8px;
-  overflow-x: auto;
-  padding: 8px 0 4px;
-  scrollbar-width: none; /* Firefox */
-  -ms-overflow-style: none;
-}
-
-.mobile-pills::-webkit-scrollbar {
-  display: none;
-}
-
-.mobile-pill {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 14px;
-  background: var(--c-surface);
-  border: 1.5px solid var(--c-border);
-  border-radius: 20px;
-  font-family: var(--font);
-  font-size: 0.8rem;
-  color: var(--c-text);
-  cursor: pointer;
-  white-space: nowrap;
-  transition: background 0.15s, border-color 0.15s;
-}
-
-.mobile-pill:hover:not(:disabled) {
-  background: var(--c-accent-light);
-  border-color: var(--c-accent);
-  color: var(--c-primary);
-}
-
-.mobile-pill:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-[data-theme="dark"] .mobile-pill {
-  background: var(--c-surface-raised);
-  border-color: var(--c-border);
-  color: var(--c-text);
-}
-
-[data-theme="dark"] .mobile-pill:hover:not(:disabled) {
-  background: rgba(201, 168, 76, 0.15);
-  border-color: var(--c-accent);
-}
 
 @media (max-width: 768px) {
   .sidebar {
@@ -695,8 +646,53 @@ body {
     display: flex;
   }
 
-  .mobile-pills {
+  /* ─── Stacked table cards on mobile ──────────────────────────────── */
+  .responsive-table-wrapper {
+    overflow-x: unset;
+  }
+
+  .responsive-table-wrapper table {
+    display: block;
+  }
+
+  .responsive-table-wrapper thead {
+    display: none;
+  }
+
+  .responsive-table-wrapper tbody {
+    display: block;
+  }
+
+  .responsive-table-wrapper tr {
+    display: block;
+    border: 1px solid var(--c-border);
+    border-radius: var(--r-sm);
+    margin-bottom: 10px;
+    overflow: hidden;
+  }
+
+  .responsive-table-wrapper td {
     display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 8px 12px;
+    border: none;
+    border-bottom: 1px solid var(--c-border);
+    white-space: normal;
+    font-size: 0.88em;
+  }
+
+  .responsive-table-wrapper td:last-child {
+    border-bottom: none;
+  }
+
+  .responsive-table-wrapper td::before {
+    content: attr(data-label);
+    font-weight: 600;
+    color: var(--c-text-muted);
+    flex: 0 0 40%;
+    font-size: 0.9em;
   }
 
   .chat-area {

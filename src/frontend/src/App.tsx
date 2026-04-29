@@ -114,6 +114,51 @@ const MoonIcon = () => (
   </svg>
 );
 
+// ── Responsive table: stacked cards on mobile, scrollable on desktop ─────────
+function ResponsiveTable({ children }: { children?: React.ReactNode; [k: string]: unknown }) {
+  const headers: string[] = [];
+
+  React.Children.forEach(children, (section) => {
+    if (!React.isValidElement(section)) return;
+    const el = section as React.ReactElement<any>;
+    if (el.type !== 'thead') return;
+    React.Children.forEach(el.props.children, (row) => {
+      if (!React.isValidElement(row)) return;
+      const tr = row as React.ReactElement<any>;
+      React.Children.forEach(tr.props.children, (cell) => {
+        if (!React.isValidElement(cell)) return;
+        const th = cell as React.ReactElement<any>;
+        const label = React.Children.toArray(th.props.children)
+          .map((c) => (typeof c === 'string' ? c : ''))
+          .join('');
+        headers.push(label);
+      });
+    });
+  });
+
+  const processedChildren = React.Children.map(children, (section) => {
+    if (!React.isValidElement(section)) return section;
+    const el = section as React.ReactElement<any>;
+    if (el.type !== 'tbody') return el;
+    const rows = React.Children.map(el.props.children, (row) => {
+      if (!React.isValidElement(row)) return row;
+      const tr = row as React.ReactElement<any>;
+      const cells = React.Children.map(tr.props.children, (cell, i) => {
+        if (!React.isValidElement(cell)) return cell;
+        return React.cloneElement(cell as React.ReactElement<any>, { 'data-label': headers[i] ?? '' });
+      });
+      return React.cloneElement(tr, {}, cells);
+    });
+    return React.cloneElement(el, {}, rows);
+  });
+
+  return (
+    <div className="responsive-table-wrapper">
+      <table>{processedChildren}</table>
+    </div>
+  );
+}
+
 // ?????? App ????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????
 export default function App() {
   const [messages, setMessages] = useState<Message[]>([]);
@@ -276,7 +321,7 @@ export default function App() {
                         msg.content === '' && isLoading && i === messages.length - 1 ? (
                           <div className="typing"><span /><span /><span /></div>
                         ) : (
-                          <ReactMarkdown remarkPlugins={[remarkGfm]}>{msg.content}</ReactMarkdown>
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={{ table: ResponsiveTable as any }}>{msg.content}</ReactMarkdown>
                         )
                       ) : (
                         msg.content
@@ -310,19 +355,6 @@ export default function App() {
 
         {/* Input */}
         <div className="input-wrapper">
-          {/* Mobile quick-question pill row — hidden on desktop (sidebar handles it) */}
-          <div className="mobile-pills" aria-label="Quick questions">
-            {SUGGESTED.map((s, i) => (
-              <button
-                key={i}
-                className="mobile-pill"
-                onClick={() => !isLoading && sendMessage(s.text)}
-                disabled={isLoading}
-              >
-                <span>{s.icon}</span> {s.text}
-              </button>
-            ))}
-          </div>
           <div className="input-bar">
             <textarea
               ref={textareaRef}
