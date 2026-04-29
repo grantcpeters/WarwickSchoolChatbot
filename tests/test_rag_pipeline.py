@@ -143,7 +143,7 @@ async def test_retrieve_reranks_admissions_before_news():
 
 @pytest.mark.asyncio
 async def test_retrieve_reranks_newer_news_before_older_news():
-    """Within the news tier, chunks mentioning more recent dates should rank first."""
+    """For event queries, chunks mentioning more recent dates should rank first within the news tier."""
     older_chunk = make_search_result(
         content="Open morning Saturday 21 September 2024, from 9:30am.",
         source_url="https://www.warwickprep.com/news-and-events/open-morning-sept2024",
@@ -161,8 +161,9 @@ async def test_retrieve_reranks_newer_news_before_older_news():
         mock_search_cls.return_value = make_search_mock([older_chunk, newer_chunk])
 
         from src.chatbot.rag_pipeline import retrieve
-        results = await retrieve("when is the next open day")
-        # March 2026 is more recent than September 2024
+        # Must be an event query to trigger date-recency reranking
+        results = await retrieve("when is the next open morning")
+        # March 2026 is more recent than September 2024, should rank first within news tier
         assert "march2026" in results[0]["source"]
         assert "sept2024" in results[1]["source"]
 

@@ -192,7 +192,8 @@ async def retrieve(query: str) -> list[dict]:
         # For event/date queries, run a supplemental keyword search targeting
         # /admissions/ pages. These are sparse pages that rarely win on keyword
         # density but hold the authoritative information about events.
-        if any(kw in query.lower() for kw in _EVENT_KW):
+        is_event_query = any(kw in query.lower() for kw in _EVENT_KW)
+        if is_event_query:
             supp_vq = VectorizedQuery(
                 vector=vector,
                 k_nearest_neighbors=5,
@@ -207,21 +208,22 @@ async def retrieve(query: str) -> list[dict]:
                 seen_urls = {c["source"] for c in admissions_chunks}
                 raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
 
-    # Re-rank:
-    #  For event/date queries: demote news/blog posts (which contain stale event info)
-    #  below canonical section pages. For all other queries, news/blog content is
-    #  equally valid (e.g. catering blog, clubs blog) so no tier demotion is applied.
-    #  Secondary sort (all queries): chunks mentioning more recent dates rank first.
-    _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
-    is_event_query = any(kw in query.lower() for kw in _EVENT_KW)
+    # Re-rank (event/date queries only):
+    #  - Demote news/blog posts below canonical section pages (stale event info)
+    #  - Within each tier, sort by most recent date mentioned in content
+    # For all other queries, trust the search relevance order — reranking hurts
+    # content that has no dates (e.g. menu PDFs, facility descriptions).
+    if is_event_query:
+        _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
 
-    def _rank_key(chunk: dict) -> tuple:
-        url = chunk["source"].lower()
-        path_rank = (1 if any(p in url for p in _NEWS_PATHS) else 0) if is_event_query else 0
-        date_rank = -_most_recent_date(chunk["content"])  # negate: higher ordinal → sorts first
-        return (path_rank, date_rank)
+        def _rank_key(chunk: dict) -> tuple:
+            url = chunk["source"].lower()
+            path_rank = 1 if any(p in url for p in _NEWS_PATHS) else 0
+            date_rank = -_most_recent_date(chunk["content"])  # negate: higher ordinal → sorts first
+            return (path_rank, date_rank)
 
-    raw.sort(key=_rank_key)  # for event queries: canonical first; always: most-recent-dated first
+        raw.sort(key=_rank_key)
+
     return raw[:TOP_K]
 
 
