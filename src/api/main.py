@@ -3,6 +3,8 @@ FastAPI backend — Chat API for Warwick Prep School Chatbot
 """
 
 import os
+import logging
+import traceback
 from pathlib import Path
 from typing import AsyncIterator
 
@@ -14,6 +16,9 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO)
+log = logging.getLogger(__name__)
 
 from src.chatbot.rag_pipeline import chat
 
@@ -69,10 +74,30 @@ async def chat_endpoint(req: ChatRequest) -> StreamingResponse:
     history = [{"role": m.role, "content": m.content} for m in req.history]
 
     async def stream_response() -> AsyncIterator[str]:
-        async for token in chat(req.message, history):
-            yield token
+        try:
+            async for token in chat(req.message, history):
+                yield token
+        except Exception:
+            err = traceback.format_exc()
+            log.error("Chat error:\n%s", err)
+            yield f"\n\n[Error: {err}]"
 
     return StreamingResponse(stream_response(), media_type="text/plain")
+
+
+@app.post("/chat-debug")
+async def chat_debug(req: ChatRequest) -> JSONResponse:
+    """Non-streaming debug endpoint — returns full response as JSON."""
+    try:
+        history = [{"role": m.role, "content": m.content} for m in req.history]
+        tokens = []
+        async for token in chat(req.message, history):
+            tokens.append(token)
+        return JSONResponse({"response": "".join(tokens), "ok": True})
+    except Exception:
+        err = traceback.format_exc()
+        log.error("Chat debug error:\n%s", err)
+        return JSONResponse({"error": err, "ok": False}, status_code=500)
 
 
 @app.get("/{full_path:path}")
