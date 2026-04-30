@@ -37,7 +37,11 @@ STATIC_DIR = Path(__file__).resolve().parent / "static"
 STATIC_ASSETS_DIR = STATIC_DIR / "static"
 INDEX_FILE = STATIC_DIR / "index.html"
 
-cors_origins = [origin.strip() for origin in os.getenv("CORS_ORIGINS", "").split(",") if origin.strip()]
+cors_origins = [
+    origin.strip()
+    for origin in os.getenv("CORS_ORIGINS", "").split(",")
+    if origin.strip()
+]
 
 if cors_origins:
     app.add_middleware(
@@ -80,7 +84,17 @@ async def chat_endpoint(request: Request, req: ChatRequest) -> StreamingResponse
     if not req.message.strip():
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
     if len(req.message) > MAX_MESSAGE_LENGTH:
-        raise HTTPException(status_code=400, detail=f"Message too long. Maximum {MAX_MESSAGE_LENGTH} characters.")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Message too long. Maximum {MAX_MESSAGE_LENGTH} characters.",
+        )
+
+    log.info(
+        "PROMPT ip=%s history_turns=%d msg=%r",
+        request.client.host,
+        len(req.history),
+        req.message,
+    )
 
     history = [{"role": m.role, "content": m.content} for m in req.history]
 
@@ -106,7 +120,9 @@ async def chat_debug(req: ChatRequest) -> JSONResponse:
         return JSONResponse({"response": "".join(tokens), "ok": True})
     except Exception:
         log.error("Chat debug error:\n%s", traceback.format_exc())
-        return JSONResponse({"error": "An internal error occurred.", "ok": False}, status_code=500)
+        return JSONResponse(
+            {"error": "An internal error occurred.", "ok": False}, status_code=500
+        )
 
 
 @app.get("/{full_path:path}")
