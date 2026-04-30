@@ -11,7 +11,7 @@ param embeddingModelName string = 'text-embedding-3-small'
 param deployOpenAiModelDeployments bool = false
 
 @description('App Service plan SKU name')
-param appServicePlanSkuName string = 'B2'
+param appServicePlanSkuName string = 'B1'
 
 @description('App Service plan SKU tier')
 param appServicePlanSkuTier string = 'Basic'
