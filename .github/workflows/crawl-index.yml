@@ -57,5 +57,33 @@ jobs:
       - name: Run incremental crawler
         run: python src/crawler/run_crawler.py
 
+      - name: Crawl summary
+        run: |
+          python - <<'EOF'
+          import json, os
+          with open("crawl-stats.json") as f:
+              s = json.load(f)
+          lines = [
+              f"## Crawl Summary — {s['timestamp']}",
+              "",
+              "| Metric | Count |",
+              "|--------|-------|",
+              f"| Pages active | {s['total']} |",
+              f"| + New | {s['new']} |",
+              f"| ~ Updated | {s['updated']} |",
+              f"| = Unchanged | {s['unchanged']} |",
+              f"| - Removed | {s['removed']} |",
+              f"| Max depth | {s['max_depth']} levels (0–{s['max_depth']}) |",
+          ]
+          if s.get("removed_urls"):
+              lines += ["", "**Removed pages:**"]
+              for url in s["removed_urls"]:
+                  lines.append(f"- {url}")
+          summary = "\n".join(lines)
+          print(summary)
+          with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+              f.write(summary + "\n")
+          EOF
+
       - name: Run incremental indexer
         run: python src/indexer/run_indexer.py

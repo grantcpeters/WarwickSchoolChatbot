@@ -6,6 +6,7 @@ and stores them in Azure Blob Storage.
 Uses asyncio + aiohttp with a bounded concurrency semaphore for speed.
 """
 
+import json
 import os
 import re
 import asyncio
@@ -25,7 +26,9 @@ from src.shared.blob_json_state import load_json_state, save_json_state
 
 load_dotenv()
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 log = logging.getLogger(__name__)
 
 START_URL = os.getenv("CRAWL_START_URL", "https://www.warwickprep.com/")
@@ -45,8 +48,11 @@ def _get_async_blob_client() -> AsyncBlobServiceClient:
         return AsyncBlobServiceClient.from_connection_string(conn_str)
     account_name = os.getenv("AZURE_STORAGE_ACCOUNT_NAME")
     if not account_name:
-        raise ValueError("Set AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME.")
+        raise ValueError(
+            "Set AZURE_STORAGE_CONNECTION_STRING or AZURE_STORAGE_ACCOUNT_NAME."
+        )
     from azure.identity.aio import DefaultAzureCredential as AsyncDefaultAzureCredential
+
     return AsyncBlobServiceClient(
         account_url=f"https://{account_name}.blob.core.windows.net",
         credential=AsyncDefaultAzureCredential(),
@@ -82,7 +88,9 @@ def normalize_links(url: str, html_bytes: bytes) -> list[str]:
 async def crawl_async() -> None:
     # Load previous state using sync client (only needed once at startup)
     sync_blob_client = get_blob_service_client()
-    previous_state: dict = load_json_state(sync_blob_client, CONTAINER_RAW, STATE_BLOB_NAME).get("pages", {})
+    previous_state: dict = load_json_state(
+        sync_blob_client, CONTAINER_RAW, STATE_BLOB_NAME
+    ).get("pages", {})
 
     current_state: dict[str, dict] = {}
     new_count = 0
@@ -109,16 +117,29 @@ async def crawl_async() -> None:
                 await cc.create_container()
                 log.info("Created container: %s", name)
 
-    async def upload_blob_async(client: AsyncBlobServiceClient, container: str, blob_name: str,
-                                data: bytes, content_type: str) -> None:
+    async def upload_blob_async(
+        client: AsyncBlobServiceClient,
+        container: str,
+        blob_name: str,
+        data: bytes,
+        content_type: str,
+    ) -> None:
         cc = client.get_container_client(container)
         await cc.upload_blob(blob_name, data, overwrite=True, content_type=content_type)
         log.info("Uploaded %d bytes -> %s/%s", len(data), container, blob_name)
 
-    async def blob_exists_async(client: AsyncBlobServiceClient, container: str, blob_name: str) -> bool:
-        return await client.get_container_client(container).get_blob_client(blob_name).exists()
+    async def blob_exists_async(
+        client: AsyncBlobServiceClient, container: str, blob_name: str
+    ) -> bool:
+        return (
+            await client.get_container_client(container)
+            .get_blob_client(blob_name)
+            .exists()
+        )
 
-    async def delete_blob_if_exists_async(client: AsyncBlobServiceClient, container: str, blob_name: str) -> None:
+    async def delete_blob_if_exists_async(
+        client: AsyncBlobServiceClient, container: str, blob_name: str
+    ) -> None:
         cc = client.get_container_client(container)
         try:
             await cc.delete_blob(blob_name)
@@ -126,8 +147,12 @@ async def crawl_async() -> None:
         except ResourceNotFoundError:
             pass
 
-    async def process_url(session: aiohttp.ClientSession, client: AsyncBlobServiceClient,
-                          url: str, depth: int) -> None:
+    async def process_url(
+        session: aiohttp.ClientSession,
+        client: AsyncBlobServiceClient,
+        url: str,
+        depth: int,
+    ) -> None:
         nonlocal new_count, updated_count, unchanged_count
 
         previous_entry = previous_state.get(url, {})
@@ -139,7 +164,9 @@ async def crawl_async() -> None:
 
         try:
             log.info("[depth=%d] Fetching %s", depth, url)
-            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)) as resp:
+            async with session.get(
+                url, headers=headers, timeout=aiohttp.ClientTimeout(total=15)
+            ) as resp:
                 if resp.status == 304:
                     async with state_lock:
                         unchanged_count += 1
@@ -193,9 +220,18 @@ async def crawl_async() -> None:
                 unchanged_count += 1
         else:
             if not blob_ok:
-                log.warning("Blob missing from storage, re-uploading: %s/%s", target_container, blob_name)
-            await upload_blob_async(client, target_container, blob_name, data,
-                                    "application/pdf" if is_pdf else "text/html")
+                log.warning(
+                    "Blob missing from storage, re-uploading: %s/%s",
+                    target_container,
+                    blob_name,
+                )
+            await upload_blob_async(
+                client,
+                target_container,
+                blob_name,
+                data,
+                "application/pdf" if is_pdf else "text/html",
+            )
             async with state_lock:
                 if url in previous_state:
                     updated_count += 1
@@ -215,7 +251,9 @@ async def crawl_async() -> None:
 
         await asyncio.sleep(CRAWL_DELAY)
 
-    async def worker(session: aiohttp.ClientSession, client: AsyncBlobServiceClient) -> None:
+    async def worker(
+        session: aiohttp.ClientSession, client: AsyncBlobServiceClient
+    ) -> None:
         nonlocal in_flight
         while True:
             try:
@@ -246,16 +284,24 @@ async def crawl_async() -> None:
 
         connector = aiohttp.TCPConnector(limit=MAX_CONCURRENCY + 5)
         async with aiohttp.ClientSession(connector=connector) as session:
-            workers = [asyncio.create_task(worker(session, async_client))
-                       for _ in range(MAX_CONCURRENCY)]
+            workers = [
+                asyncio.create_task(worker(session, async_client))
+                for _ in range(MAX_CONCURRENCY)
+            ]
             await asyncio.gather(*workers)
 
         # Clean up removed pages
         removed_urls = set(previous_state) - set(current_state)
         for removed_url in removed_urls:
             removed_entry = previous_state[removed_url]
-            target_container = CONTAINER_PDF if removed_entry.get("source_type") == "pdf" else CONTAINER_RAW
-            await delete_blob_if_exists_async(async_client, target_container, removed_entry["blob_name"])
+            target_container = (
+                CONTAINER_PDF
+                if removed_entry.get("source_type") == "pdf"
+                else CONTAINER_RAW
+            )
+            await delete_blob_if_exists_async(
+                async_client, target_container, removed_entry["blob_name"]
+            )
             log.info("Removed stale page: %s", removed_url)
 
     removed_count = len(removed_urls)
@@ -267,18 +313,37 @@ async def crawl_async() -> None:
         {
             "pages": current_state,
             "stats": {
-                "new":       new_count,
-                "updated":   updated_count,
+                "new": new_count,
+                "updated": updated_count,
                 "unchanged": unchanged_count,
-                "removed":   removed_count,
-                "total":     len(current_state),
+                "removed": removed_count,
+                "total": len(current_state),
             },
         },
     )
 
+    timestamp = datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC")
+
+    stats_path = os.path.join(os.getcwd(), "crawl-stats.json")
+    with open(stats_path, "w") as _f:
+        json.dump(
+            {
+                "timestamp": timestamp,
+                "max_depth": MAX_DEPTH,
+                "total": len(current_state),
+                "new": new_count,
+                "updated": updated_count,
+                "unchanged": unchanged_count,
+                "removed": removed_count,
+                "removed_urls": sorted(removed_urls),
+            },
+            _f,
+            indent=2,
+        )
+
     separator = "=" * 52
     log.info(separator)
-    log.info("CRAWL COMPLETE — %s", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    log.info("CRAWL COMPLETE — %s", timestamp)
     log.info("  Max depth configured : %d levels (0–%d)", MAX_DEPTH, MAX_DEPTH)
     log.info("  Pages active         : %d", len(current_state))
     log.info("  + New pages          : %d", new_count)
@@ -297,4 +362,3 @@ def crawl() -> None:
 
 if __name__ == "__main__":
     crawl()
-
