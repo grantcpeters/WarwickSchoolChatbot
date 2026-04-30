@@ -1,5 +1,5 @@
 """
-FastAPI backend — Chat API for Warwick Prep School Chatbot
+FastAPI backend — Chat API for Ask Warwick
 """
 
 import os
@@ -30,7 +30,7 @@ from src.chatbot.rag_pipeline import chat
 MAX_MESSAGE_LENGTH = int(os.getenv("MAX_MESSAGE_LENGTH", "2000"))
 
 limiter = Limiter(key_func=get_remote_address)
-app = FastAPI(title="WarwickPrep Chatbot API", version="1.0.0")
+app = FastAPI(title="Ask Warwick API", version="1.0.0")
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 STATIC_DIR = Path(__file__).resolve().parent / "static"
@@ -75,7 +75,7 @@ async def health() -> dict:
 async def root() -> Response:
     if INDEX_FILE.exists():
         return FileResponse(INDEX_FILE)
-    return JSONResponse({"status": "ok", "service": "WarwickPrep Chatbot API"})
+    return JSONResponse({"status": "ok", "service": "Ask Warwick API"})
 
 
 @app.post("/chat")

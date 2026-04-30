@@ -57,7 +57,7 @@ function urlToLabel(url: string): string {
     const parsed = new URL(url.startsWith('http') ? url : `https://${url}`);
     const { pathname } = parsed;
     const segments = pathname.split('/').filter(Boolean);
-    if (segments.length === 0) return 'Teachers Pet';
+    if (segments.length === 0) return 'Ask Warwick';
     const last = segments[segments.length - 1];
     // Hex hash filenames (e.g. ED13E431B4F0ABE4E536FE4074E3ECD2.pdf)
     if (/^[0-9a-f]{16,}\.(pdf|html)$/i.test(last)) return 'School Document';
@@ -290,7 +290,7 @@ export default function App() {
         <div className="header__brand">
           <div className="header__avatar"><SchoolIcon /></div>
           <div className="header__info">
-            <span className="header__name">Teachers Pet</span>
+            <span className="header__name">Ask Warwick</span>
             <span className="header__status">
               <span className="header__status-dot" />
               Warwick Prep School
@@ -426,7 +426,7 @@ export default function App() {
             value={input}
             onChange={e => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder="Ask Teachers Pet anything…"
+            placeholder="Ask Warwick anything…"
             disabled={isLoading}
             rows={1}
             className="input-bar__textarea"
