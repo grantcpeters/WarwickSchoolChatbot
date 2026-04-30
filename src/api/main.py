@@ -109,20 +109,26 @@ async def chat_endpoint(request: Request, req: ChatRequest) -> StreamingResponse
     return StreamingResponse(stream_response(), media_type="text/plain")
 
 
-@app.post("/chat-debug")
-async def chat_debug(req: ChatRequest) -> JSONResponse:
-    """Non-streaming debug endpoint — returns full response as JSON."""
-    try:
-        history = [{"role": m.role, "content": m.content} for m in req.history]
-        tokens = []
-        async for token in chat(req.message, history):
-            tokens.append(token)
-        return JSONResponse({"response": "".join(tokens), "ok": True})
-    except Exception:
-        log.error("Chat debug error:\n%s", traceback.format_exc())
-        return JSONResponse(
-            {"error": "An internal error occurred.", "ok": False}, status_code=500
-        )
+class FeedbackRequest(BaseModel):
+    message: str
+    response: str
+    rating: int  # 1 = thumbs up, -1 = thumbs down
+
+
+@app.post("/feedback")
+@limiter.limit("60/minute")
+async def feedback_endpoint(request: Request, req: FeedbackRequest) -> JSONResponse:
+    if req.rating not in (1, -1):
+        raise HTTPException(status_code=400, detail="Rating must be 1 or -1.")
+    label = "GOOD" if req.rating == 1 else "BAD"
+    log.info(
+        "FEEDBACK rating=%s ip=%s msg=%r response_snippet=%r",
+        label,
+        request.client.host,
+        req.message,
+        req.response[:120],
+    )
+    return JSONResponse({"ok": True})
 
 
 @app.get("/{full_path:path}")

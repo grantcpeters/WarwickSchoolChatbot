@@ -135,28 +135,25 @@ def test_chat_error_does_not_expose_traceback(client):
         assert "error occurred" in resp.text.lower()
 
 
-# ── Debug endpoint ────────────────────────────────────────────
+# ── Feedback endpoint ─────────────────────────────────────────
 
-def test_chat_debug_returns_json(client):
-    async def mock_chat(query, history):
-        yield "debug response"
-
-    with patch("src.api.main.chat", side_effect=mock_chat):
-        resp = client.post("/chat-debug", json={"message": "test", "history": []})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["ok"] is True
-        assert "debug response" in data["response"]
+def test_feedback_thumbs_up_accepted(client):
+    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi there", "rating": 1})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
 
-def test_chat_debug_error_hides_details(client):
-    async def mock_chat(query, history):
-        raise ValueError("secret internal error")
-        yield
+def test_feedback_thumbs_down_accepted(client):
+    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi there", "rating": -1})
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
 
-    with patch("src.api.main.chat", side_effect=mock_chat):
-        resp = client.post("/chat-debug", json={"message": "test", "history": []})
-        assert resp.status_code == 500
-        data = resp.json()
-        assert data["ok"] is False
-        assert "secret internal error" not in data.get("error", "")
+
+def test_feedback_invalid_rating_rejected(client):
+    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi", "rating": 0})
+    assert resp.status_code == 400
+
+
+def test_chat_debug_endpoint_removed(client):
+    resp = client.post("/chat-debug", json={"message": "test", "history": []})
+    assert resp.status_code == 404 or resp.status_code == 405

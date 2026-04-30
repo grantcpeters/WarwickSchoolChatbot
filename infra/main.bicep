@@ -11,7 +11,7 @@ param embeddingModelName string = 'text-embedding-3-small'
 param deployOpenAiModelDeployments bool = false
 
 @description('App Service plan SKU name')
-param appServicePlanSkuName string = 'B1'
+param appServicePlanSkuName string = 'B2'
 
 @description('App Service plan SKU tier')
 param appServicePlanSkuTier string = 'Basic'
@@ -214,7 +214,7 @@ resource webApp 'Microsoft.Web/sites@2023-12-01' = if (deployWebApp) {
     siteConfig: {
       linuxFxVersion: 'PYTHON|3.11'
       alwaysOn: true
-      appCommandLine: 'gunicorn -k uvicorn.workers.UvicornWorker --bind=0.0.0.0:8000 src.api.main:app'
+      appCommandLine: 'gunicorn -k uvicorn.workers.UvicornWorker --workers 2 --timeout 120 --bind=0.0.0.0:8000 src.api.main:app'
       ftpsState: 'Disabled'
       minTlsVersion: '1.2'
     }

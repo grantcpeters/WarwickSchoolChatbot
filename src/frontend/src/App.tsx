@@ -7,6 +7,7 @@ interface Message {
   role: 'user' | 'assistant';
   content: string;
   sources?: { url: string; title: string }[];
+  feedback?: 1 | -1 | null;
 }
 
 interface PromptDef {
@@ -70,20 +71,32 @@ function urlToLabel(url: string): string {
   }
 }
 
+const CHAT_TIMEOUT_MS = 60_000;
+
 async function streamChat(
   message: string,
   history: Message[],
   onToken: (token: string) => void
 ): Promise<{ url: string; title: string }[]> {
-  const response = await fetch(`${API_BASE}/chat`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      message,
-      history: history.map(({ role, content }) => ({ role, content })),
-    }),
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), CHAT_TIMEOUT_MS);
 
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE}/chat`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        message,
+        history: history.map(({ role, content }) => ({ role, content })),
+      }),
+      signal: controller.signal,
+    });
+  } finally {
+    clearTimeout(timer);
+  }
+
+  if (response.status === 429) throw Object.assign(new Error('rate_limited'), { code: 'rate_limited' });
   if (!response.ok) throw new Error('Chat request failed');
 
   const reader = response.body!.getReader();
@@ -165,6 +178,20 @@ const CloseIcon = () => (
   </svg>
 );
 
+const ThumbUpIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3z"/>
+    <path d="M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3"/>
+  </svg>
+);
+
+const ThumbDownIcon = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M10 15v4a3 3 0 0 0 3 3l4-9V2H5.72a2 2 0 0 0-2 1.7l-1.38 9a2 2 0 0 0 2 2.3z"/>
+    <path d="M17 2h2.67A2.31 2.31 0 0 1 22 4v7a2.31 2.31 0 0 1-2.33 2H17"/>
+  </svg>
+);
+
 // ── Responsive table ──────────────────────────────────────────────────────────
 function ResponsiveTable({ children }: { children?: React.ReactNode; [k: string]: unknown }) {
   const headers: string[] = [];
@@ -216,6 +243,28 @@ export default function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
+  const sendFeedback = async (msgIndex: number, rating: 1 | -1) => {
+    setMessages(prev => {
+      const updated = [...prev];
+      updated[msgIndex] = { ...updated[msgIndex], feedback: rating };
+      return updated;
+    });
+    // Find the user message that prompted this assistant response
+    const assistantMsg = messages[msgIndex];
+    const userMsg = messages[msgIndex - 1];
+    try {
+      await fetch(`${API_BASE}/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message: userMsg?.content ?? '',
+          response: assistantMsg.content,
+          rating,
+        }),
+      });
+    } catch { /* fire-and-forget, ignore network errors */ }
+  };
+
   useEffect(() => {
     document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
     try { localStorage.setItem('theme', darkMode ? 'dark' : 'light'); } catch {}
@@ -253,10 +302,17 @@ export default function App() {
           return updated;
         });
       }
-    } catch {
+    } catch (err: unknown) {
+      const code = (err as { code?: string }).code;
+      const isAbort = err instanceof DOMException && err.name === 'AbortError';
+      const msg = isAbort
+        ? 'This is taking too long — please try again.'
+        : code === 'rate_limited'
+        ? "You're sending messages too quickly — please wait a moment."
+        : 'Sorry, something went wrong. Please try again.';
       setMessages(prev => {
         const updated = [...prev];
-        updated[updated.length - 1] = { ...updated[updated.length - 1], content: 'Sorry, something went wrong. Please try again.' };
+        updated[updated.length - 1] = { ...updated[updated.length - 1], content: msg };
         return updated;
       });
     } finally {
@@ -287,7 +343,7 @@ export default function App() {
 
       {/* ── Header ── */}
       <header className="header">
-        <div className="header__brand">
+        <button className="header__brand header__brand--btn" onClick={() => setMessages([])} aria-label="Go to home">
           <div className="header__avatar"><SchoolIcon /></div>
           <div className="header__info">
             <span className="header__name">Ask Warwick</span>
@@ -296,7 +352,7 @@ export default function App() {
               Warwick Prep School
             </span>
           </div>
-        </div>
+        </button>
         <div className="header__actions">
           {messages.length > 0 && (
             <button className="header__btn" onClick={() => setMessages([])} aria-label="Clear chat">
@@ -391,6 +447,24 @@ export default function App() {
                       ))}
                     </div>
                   )}
+                  {msg.role === 'assistant' && msg.content && !(msg.content === '' && isLoading) && (
+                    <div className="message__feedback">
+                      <button
+                        className={`feedback-btn${msg.feedback === 1 ? ' feedback-btn--active feedback-btn--good' : ''}`}
+                        onClick={() => sendFeedback(i, 1)}
+                        disabled={msg.feedback != null}
+                        aria-label="Good response"
+                        title="Good response"
+                      ><ThumbUpIcon /></button>
+                      <button
+                        className={`feedback-btn${msg.feedback === -1 ? ' feedback-btn--active feedback-btn--bad' : ''}`}
+                        onClick={() => sendFeedback(i, -1)}
+                        disabled={msg.feedback != null}
+                        aria-label="Bad response"
+                        title="Bad response"
+                      ><ThumbDownIcon /></button>
+                    </div>
+                  )}
                 </div>
                 {msg.role === 'user' && (
                   <div className="message__avatar message__avatar--user">U</div>
@@ -438,6 +512,9 @@ export default function App() {
         </div>
         <p className="input-area__hint">Enter to send · Shift+Enter for new line</p>
       </div>
+
+      {/* ── AI disclaimer ── */}
+      <p className="disclaimer">Ask Warwick uses AI and may occasionally be wrong. Always verify important information directly with the school.</p>
 
       {/* ── Prompts drawer (bottom sheet) ── */}
       {showDrawer && (
