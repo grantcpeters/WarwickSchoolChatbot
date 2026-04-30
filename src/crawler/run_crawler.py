@@ -85,7 +85,8 @@ async def crawl_async() -> None:
     previous_state: dict = load_json_state(sync_blob_client, CONTAINER_RAW, STATE_BLOB_NAME).get("pages", {})
 
     current_state: dict[str, dict] = {}
-    changed_count = 0
+    new_count = 0
+    updated_count = 0
     unchanged_count = 0
     # Protect shared state from concurrent modification
     state_lock = asyncio.Lock()
@@ -127,7 +128,7 @@ async def crawl_async() -> None:
 
     async def process_url(session: aiohttp.ClientSession, client: AsyncBlobServiceClient,
                           url: str, depth: int) -> None:
-        nonlocal changed_count, unchanged_count
+        nonlocal new_count, updated_count, unchanged_count
 
         previous_entry = previous_state.get(url, {})
         headers: dict[str, str] = {"User-Agent": "WarwickSchoolChatbot-Crawler/1.0"}
@@ -196,7 +197,10 @@ async def crawl_async() -> None:
             await upload_blob_async(client, target_container, blob_name, data,
                                     "application/pdf" if is_pdf else "text/html")
             async with state_lock:
-                changed_count += 1
+                if url in previous_state:
+                    updated_count += 1
+                else:
+                    new_count += 1
 
         async with state_lock:
             current_state[url] = current_entry
@@ -247,14 +251,15 @@ async def crawl_async() -> None:
             await asyncio.gather(*workers)
 
         # Clean up removed pages
-        crawl_blob_names = {entry["blob_name"] for entry in current_state.values()}
         removed_urls = set(previous_state) - set(current_state)
         for removed_url in removed_urls:
             removed_entry = previous_state[removed_url]
             target_container = CONTAINER_PDF if removed_entry.get("source_type") == "pdf" else CONTAINER_RAW
             await delete_blob_if_exists_async(async_client, target_container, removed_entry["blob_name"])
+            log.info("Removed stale page: %s", removed_url)
 
-    # Save state using sync client
+    removed_count = len(removed_urls)
+
     save_json_state(
         sync_blob_client,
         CONTAINER_RAW,
@@ -262,21 +267,28 @@ async def crawl_async() -> None:
         {
             "pages": current_state,
             "stats": {
-                "changed": changed_count,
-                "removed": len(set(previous_state) - set(current_state)),
-                "total": len(current_state),
+                "new":       new_count,
+                "updated":   updated_count,
                 "unchanged": unchanged_count,
+                "removed":   removed_count,
+                "total":     len(current_state),
             },
         },
     )
 
-    log.info(
-        "Crawl complete. Active=%d changed=%d unchanged=%d removed=%d",
-        len(current_state),
-        changed_count,
-        unchanged_count,
-        len(set(previous_state) - set(current_state)),
-    )
+    separator = "=" * 52
+    log.info(separator)
+    log.info("CRAWL COMPLETE — %s", datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"))
+    log.info("  Max depth configured : %d levels (0–%d)", MAX_DEPTH, MAX_DEPTH)
+    log.info("  Pages active         : %d", len(current_state))
+    log.info("  + New pages          : %d", new_count)
+    log.info("  ~ Updated pages      : %d", updated_count)
+    log.info("  = Unchanged pages    : %d", unchanged_count)
+    log.info("  - Removed (stale)    : %d", removed_count)
+    if removed_urls:
+        for url in sorted(removed_urls):
+            log.info("      - %s", url)
+    log.info(separator)
 
 
 def crawl() -> None:
