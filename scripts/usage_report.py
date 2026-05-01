@@ -2,6 +2,7 @@
 Ask Warwick — Usage Report
 Usage:  python scripts/usage_report.py [--hours 24]
 """
+
 import argparse
 import subprocess
 import json
@@ -20,11 +21,15 @@ def get_token() -> str:
 
 def run_kql(query: str, token: str) -> list[dict]:
     import urllib.request
+
     body = json.dumps({"query": query}).encode()
     req = urllib.request.Request(
         ANALYTICS_URL,
         data=body,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
         method="POST",
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
@@ -50,7 +55,9 @@ def sect(title: str):
 
 def main():
     parser = argparse.ArgumentParser(description="Ask Warwick usage report")
-    parser.add_argument("--hours", type=int, default=24, help="Hours to look back (default: 24)")
+    parser.add_argument(
+        "--hours", type=int, default=24, help="Hours to look back (default: 24)"
+    )
     args = parser.parse_args()
     hours = args.hours
 
@@ -64,13 +71,16 @@ def main():
     # ── 1. Unique visitors ────────────────────────────────────────────────────
 
     sect("1. Unique Visitors  (IPs that sent /chat messages)")
-    rows = run_kql(f"""
+    rows = run_kql(
+        f"""
 AppServiceHTTPLogs
 | where TimeGenerated > ago({hours}h)
 | where CsUriStem == "/chat" and CsMethod == "POST"
 | summarize messages=count() by CIp
 | order by messages desc
-""", token)
+""",
+        token,
+    )
 
     if not rows:
         print("    No /chat requests found.")
@@ -87,7 +97,8 @@ AppServiceHTTPLogs
     # ── 2. Total site hits ────────────────────────────────────────────────────
 
     sect("2. Total Site Hits")
-    rows = run_kql(f"""
+    rows = run_kql(
+        f"""
 AppServiceHTTPLogs
 | where TimeGenerated > ago({hours}h)
 | summarize
@@ -95,7 +106,9 @@ AppServiceHTTPLogs
     chat_calls    = countif(CsUriStem == "/chat" and CsMethod == "POST"),
     feedback_hits = countif(CsUriStem == "/feedback" and CsMethod == "POST"),
     total         = count()
-""", token)
+""",
+        token,
+    )
 
     if rows:
         h = rows[0]
@@ -107,29 +120,32 @@ AppServiceHTTPLogs
     # ── 3. Feedback ───────────────────────────────────────────────────────────
 
     sect("3. Feedback — Thumbs Up / Down")
-    rows = run_kql(f"""
+    rows = run_kql(
+        f"""
 AppServiceConsoleLogs
 | where TimeGenerated > ago({hours}h)
 | where ResultDescription has "FEEDBACK"
 | extend rating   = extract("rating=(GOOD|BAD)", 1, ResultDescription)
-| extend question = extract(@"msg='([^']+)'", 1, ResultDescription)
-| extend snippet  = extract(@"response_snippet='([^']+)'", 1, ResultDescription)
+| extend question = coalesce(extract(@"msg='([^']+)'", 1, ResultDescription), extract(@'msg="([^"]+)"', 1, ResultDescription))
+| extend snippet  = coalesce(extract(@"response_snippet='([^']+)'", 1, ResultDescription), extract(@'response_snippet="([^"]+)"', 1, ResultDescription))
 | project TimeGenerated, rating, question, snippet
 | order by TimeGenerated desc
-""", token)
+""",
+        token,
+    )
 
     if not rows:
         print("    No feedback recorded yet.")
     else:
         good = sum(1 for r in rows if r["rating"] == "GOOD")
-        bad  = sum(1 for r in rows if r["rating"] == "BAD")
+        bad = sum(1 for r in rows if r["rating"] == "BAD")
         print(f"    Thumbs UP   : {good}")
         print(f"    Thumbs DOWN : {bad}")
         print()
         for r in rows:
             icon = "[+]" if r["rating"] == "GOOD" else "[-]"
-            ts   = r["TimeGenerated"][:16]
-            q    = r["question"] or "(unknown)"
+            ts = r["TimeGenerated"][:16]
+            q = r["question"] or "(unknown)"
             print(f"    {icon} {ts}  Q: {q}")
             if r.get("snippet"):
                 snip = r["snippet"][:100]
@@ -138,15 +154,18 @@ AppServiceConsoleLogs
     # ── 4. Prompts ────────────────────────────────────────────────────────────
 
     sect("4. Prompts Asked  (most recent first)")
-    rows = run_kql(f"""
+    rows = run_kql(
+        f"""
 AppServiceConsoleLogs
 | where TimeGenerated > ago({hours}h)
 | where ResultDescription has "PROMPT"
 | extend turns    = toint(extract(@"history_turns=(\d+)", 1, ResultDescription))
-| extend question = extract(@"msg='([^']+)'", 1, ResultDescription)
+| extend question = coalesce(extract(@"msg='([^']+)'", 1, ResultDescription), extract(@'msg="([^"]+)"', 1, ResultDescription))
 | project TimeGenerated, turns, question
 | order by TimeGenerated desc
-""", token)
+""",
+        token,
+    )
 
     if not rows:
         print("    No prompts recorded yet.")
@@ -155,13 +174,14 @@ AppServiceConsoleLogs
         print(f"    {'----------':<16}  {'----':<4}  --------")
         for r in rows:
             ts = r["TimeGenerated"][:16]
-            q  = (r["question"] or "")
-            q  = q[:68] + "..." if len(q) > 68 else q
+            q = r["question"] or ""
+            q = q[:68] + "..." if len(q) > 68 else q
             print(f"    {ts:<16}  {str(r['turns']):<4}  {q}")
 
         print()
         print("    --- Top questions ---")
         from collections import Counter
+
         counts = Counter(r["question"] for r in rows if r["question"])
         for question, count in counts.most_common(10):
             print(f"    {count:3}x  {question}")
