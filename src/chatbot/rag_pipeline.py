@@ -83,6 +83,12 @@ always report the MOST RECENT year's fees. Ignore any data explicitly labelled "
 Fees" or from a previous academic year. If you are unsure which year is current, use the \
 highest year number present in the context.
 
+LUNCH MENUS: Weekly menus each say "Served on weeks commencing - [dates]". \
+When answering a lunch/menu question, find the menu whose "weeks commencing" dates include \
+the current Monday (i.e. the Monday of today's week) — that is the CURRENT week's menu. \
+Show that menu as the primary answer. Only mention a future week's menu as "coming up next \
+week" if it adds useful context. Do NOT present a future week as the current one.
+
 Today's date is {today}.
 If any information in the context refers to specific dates or events (such as open mornings, \
 term dates, or school events) and those dates have already passed, clearly say that this \
