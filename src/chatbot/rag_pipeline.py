@@ -30,6 +30,10 @@ _EVENT_KW = (
     "holiday", "school event", "open afternoon",
 )
 
+# Queries about fees/tuition — triggers filtering of hiddenarea/ chunks (historical fee
+# archives) so the current academic year's fees from /admissions/fees always win.
+_FEES_KW = ("fee", "fees", "tuition", "term cost", "school fees", "term fees", "how much")
+
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
 # so the weekly PDF menus surface even though they don't match "what's for lunch" well.
 _MENU_KW = ("lunch", "menu", "food today", "catering", "eat today", "dinner")
@@ -53,6 +57,11 @@ DATES AND EVENTS: When the context contains multiple references to the same type
 If all dates in the context are in the past, say so clearly and direct the user to \
 warwickprep.com or admissions. Never report an old date as "the next" event without checking \
 it is actually in the future.
+
+FEES AND PRICING: When the context contains fee information for more than one academic year, \
+always report the MOST RECENT year's fees. Ignore any data explicitly labelled "Last Year's \
+Fees" or from a previous academic year. If you are unsure which year is current, use the \
+highest year number present in the context.
 
 Today's date is {today}.
 If any information in the context refers to specific dates or events (such as open mornings, \
@@ -234,6 +243,14 @@ async def retrieve(query: str) -> list[dict]:
             if menu_chunks:
                 seen_urls = {c["source"] for c in raw}
                 raw = menu_chunks + [c for c in raw if c["source"] not in {c2["source"] for c2 in menu_chunks}]
+
+        # For fees queries, strip historical fee archive pages (hiddenarea/) so that
+        # the current year's fees in /admissions/fees always take precedence.
+        # Only filter if doing so still leaves at least one result.
+        if any(kw in query.lower() for kw in _FEES_KW):
+            current_fees = [c for c in raw if "/hiddenarea/" not in c["source"].lower()]
+            if current_fees:
+                raw = current_fees
 
     # Re-rank (event/date queries only):
     #  - Demote news/blog posts below canonical section pages (stale event info)

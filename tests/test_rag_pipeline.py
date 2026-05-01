@@ -482,3 +482,110 @@ async def test_chat_filters_malformed_at_sign_urls():
         assert "admissions@warwickprep.com" not in full
         assert "https://www.warwickprep.com/admissions" in full
 
+
+# ── Fees query — hiddenarea filtering ─────────────────────────
+
+@pytest.mark.asyncio
+async def test_fees_query_removes_hiddenarea_chunks():
+    """For fees queries, chunks from hiddenarea/ (historical fee archives) must be excluded
+    when current-year alternatives exist."""
+    old_fees = make_search_result(
+        content="Fees for the Academic Year 2024/2025 From 1 January 2025 Reception Years 1 and 2 £3,950",
+        source_url="https://www.warwickprep.com/hiddenarea/fees-24-25",
+        page_title="Fees 24 25",
+    )
+    current_fees = make_search_result(
+        content="Fees for the Academic Year 2025/2026 Reception Years 1 & 2 Net Fee £4,509 VAT £902 Total £5,411",
+        source_url="https://www.warwickprep.com/admissions/fees",
+        page_title="Fees",
+    )
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        # Search returns old fees first (higher score), then current fees
+        mock_search_cls.return_value = make_search_mock([old_fees, current_fees])
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("what are the fees for the 2025/2026 year")
+
+        sources = [r["source"] for r in results]
+        assert not any("hiddenarea" in s for s in sources), (
+            "hiddenarea chunks should be excluded for fees queries"
+        )
+        assert any("admissions/fees" in s for s in sources), (
+            "current admissions/fees page should be included"
+        )
+
+
+@pytest.mark.asyncio
+async def test_fees_query_keeps_hiddenarea_if_no_alternatives():
+    """If hiddenarea/ is the only available result, do not return an empty list."""
+    only_old_fees = make_search_result(
+        content="Fees for the Academic Year 2024/2025 Reception £3,950",
+        source_url="https://www.warwickprep.com/hiddenarea/fees-24-25",
+        page_title="Fees 24 25",
+    )
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = make_search_mock([only_old_fees])
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("what are the school fees")
+
+        # Should fall back to returning the hiddenarea result rather than nothing
+        assert len(results) == 1
+        assert "hiddenarea" in results[0]["source"]
+
+
+@pytest.mark.asyncio
+async def test_non_fees_query_does_not_filter_hiddenarea():
+    """The hiddenarea filter must only trigger for fees-related queries."""
+    hidden_page = make_search_result(
+        content="Welcome to Warwick Prep School",
+        source_url="https://www.warwickprep.com/hiddenarea/some-other-page",
+        page_title="Hidden Page",
+    )
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, \
+         patch("src.chatbot.rag_pipeline._get_search") as mock_search_cls:
+
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = make_search_mock([hidden_page])
+
+        from src.chatbot.rag_pipeline import retrieve
+        results = await retrieve("tell me about the school")
+
+        # For a non-fees query, the hiddenarea chunk should NOT be filtered
+        assert len(results) == 1
+        assert "hiddenarea" in results[0]["source"]
+
+
+def test_system_prompt_contains_fees_guidance():
+    """System prompt must instruct the LLM to use the most recent year's fee data."""
+    from src.chatbot.rag_pipeline import _build_system_prompt
+    prompt = _build_system_prompt()
+    assert "FEES" in prompt
+    assert "MOST RECENT" in prompt
+
+
+# ── Crawler URL exclusion ─────────────────────────────────────
+
+def test_should_crawl_excludes_hiddenarea():
+    """URLs under hiddenarea/ must be excluded from crawling."""
+    from src.crawler.run_crawler import _should_crawl
+    assert not _should_crawl("https://www.warwickprep.com/hiddenarea/fees-24-25")
+    assert not _should_crawl("https://www.warwickprep.com/hiddenarea/fees-24-25/our-response-to-vat")
+
+
+def test_should_crawl_allows_normal_pages():
+    """Non-excluded pages should pass the crawl filter."""
+    from src.crawler.run_crawler import _should_crawl
+    assert _should_crawl("https://www.warwickprep.com/admissions/fees")
+    assert _should_crawl("https://www.warwickprep.com/about-us")
+    assert _should_crawl("https://www.warwickprep.com/")
+

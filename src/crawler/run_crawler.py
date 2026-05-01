@@ -40,6 +40,21 @@ CONTAINER_RAW = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "webcrawl-raw")
 CONTAINER_PDF = os.getenv("AZURE_STORAGE_CONTAINER_PDF", "webcrawl-pdf")
 STATE_BLOB_NAME = "_crawler_state.json"
 
+# URL path prefixes to skip — prevents historical/hidden pages from being indexed.
+# Comma-separated list; matched against the URL path (lowercased, leading slash stripped).
+# Default excludes 'hiddenarea/' which contains previous-year fee archives.
+_EXCLUDE_PATH_PREFIXES: list[str] = [
+    p.strip().lower()
+    for p in os.getenv("CRAWL_EXCLUDE_PATHS", "hiddenarea").split(",")
+    if p.strip()
+]
+
+
+def _should_crawl(url: str) -> bool:
+    """Return False if this URL's path starts with any excluded prefix."""
+    path = urlparse(url).path.lower().lstrip("/")
+    return not any(path.startswith(prefix) for prefix in _EXCLUDE_PATH_PREFIXES)
+
 
 def _get_async_blob_client() -> AsyncBlobServiceClient:
     """Build an async BlobServiceClient mirroring the sync credential logic."""
@@ -156,6 +171,11 @@ async def crawl_async() -> None:
         nonlocal new_count, updated_count, unchanged_count
 
         previous_entry = previous_state.get(url, {})
+
+        if not _should_crawl(url):
+            log.debug("Skipping excluded path: %s", url)
+            return
+
         headers: dict[str, str] = {"User-Agent": "WarwickSchoolChatbot-Crawler/1.0"}
         if previous_entry.get("etag"):
             headers["If-None-Match"] = previous_entry["etag"]
@@ -241,9 +261,9 @@ async def crawl_async() -> None:
         async with state_lock:
             current_state[url] = current_entry
 
-        # Enqueue new links
+        # Enqueue new links (skip excluded paths)
         for absolute in links:
-            if depth + 1 <= MAX_DEPTH:
+            if depth + 1 <= MAX_DEPTH and _should_crawl(absolute):
                 async with visited_lock:
                     if absolute not in visited:
                         visited.add(absolute)
