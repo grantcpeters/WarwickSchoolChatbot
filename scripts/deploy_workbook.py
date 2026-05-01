@@ -50,8 +50,8 @@ AppServiceHTTPLogs
     ['Feedback votes']= countif(CsUriStem == "/feedback" and CsMethod == "POST"),
     ['Total requests']= count()"""
 
-_Q_MSG   = r"coalesce(extract(@\"msg='([^']+)'\", 1, ResultDescription), extract(@'msg=\"([^\"]+)\"', 1, ResultDescription))"
-_Q_SNIP  = r"coalesce(extract(@\"response_snippet='([^']+)'\", 1, ResultDescription), extract(@'response_snippet=\"([^\"]+)\"', 1, ResultDescription))"
+_Q_MSG   = '''coalesce(extract(@"msg='([^']+)'", 1, ResultDescription), extract(@'msg="([^"]+)"', 1, ResultDescription))'''
+_Q_SNIP  = '''coalesce(extract(@"response_snippet='([^']+)'", 1, ResultDescription), extract(@'response_snippet="([^"]+)"', 1, ResultDescription))'''
 
 Q_FEEDBACK = (
     'AppServiceConsoleLogs\n'
@@ -76,8 +76,7 @@ Q_TOP = (
 Q_ALL = (
     'AppServiceConsoleLogs\n'
     '| where ResultDescription has "PROMPT"\n'
-    r"| extend Turns    = toint(extract(@\"history_turns=(\d+)\", 1, ResultDescription))"
-    "\n"
+    '| extend Turns    = toint(extract(@"history_turns=(\\d+)", 1, ResultDescription))\n'
     f"| extend Question = {_Q_MSG}\n"
     "| project ['Time (UTC)']=TimeGenerated, Turns, Question\n"
     "| order by TimeGenerated desc"
