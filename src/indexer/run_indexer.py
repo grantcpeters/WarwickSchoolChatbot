@@ -174,10 +174,128 @@ def embed(openai_client: AzureOpenAI, texts: list[str]) -> list[list[float]]:
 
 
 def extract_html_text(html_bytes: bytes) -> str:
+    """Flat text extraction (kept for debugging / backward compat; indexer uses extract_html_chunks)."""
     soup = BeautifulSoup(html_bytes, "lxml")
     for tag in soup(["script", "style", "nav", "footer", "header"]):
         tag.decompose()
     return soup.get_text(separator=" ", strip=True)
+
+
+# Heading levels used for breadcrumb context injection.
+_HEADING_LEVELS: dict[str, int] = {"h1": 1, "h2": 2, "h3": 3, "h4": 4}
+
+
+def _format_heading_prefix(stack: dict) -> str:
+    """Build 'H1 text > H2 text > H3 text' from the current heading stack."""
+    return " > ".join(stack[k] for k in sorted(stack))
+
+
+def extract_html_chunks(
+    html_bytes: bytes,
+    chunk_size: int = CHUNK_SIZE,
+    overlap: int = CHUNK_OVERLAP,
+) -> list[str]:
+    """Parse HTML and return chunks with heading breadcrumb prepended to each one.
+
+    Each chunk is prefixed with its section context, e.g.:
+      "[Main School Fees (Per term) > Fees for the Academic Year 2025/2026] £4,509 …"
+
+    This ensures every retrieved chunk carries unambiguous section/year context so the
+    LLM cannot confuse 2024/25 fee data with 2025/26 data, or last-year events with
+    current ones.
+
+    Tables are emitted as pipe-separated rows so fee/uniform/schedule tables are
+    kept together as coherent blocks rather than being split mid-row.
+    """
+    soup = BeautifulSoup(html_bytes, "lxml")
+    for tag in soup(["script", "style", "nav", "footer", "header"]):
+        tag.decompose()
+
+    # ── Step 1: linear pass → (kind, data) items in document order ──────────
+    # 'heading': (level: int, text: str)
+    # 'text':    str
+    items: list[tuple] = []
+    _seen: set[int] = set()
+
+    def _mark_subtree(node) -> None:
+        _seen.add(id(node))
+        if hasattr(node, "descendants"):
+            for d in node.descendants:
+                _seen.add(id(d))
+
+    def _collect(node) -> None:
+        if id(node) in _seen:
+            return
+        if not hasattr(node, "name") or node.name is None:
+            return
+        name = node.name.lower()
+
+        if name in _HEADING_LEVELS:
+            text = node.get_text(strip=True)
+            if text:
+                items.append(("heading", _HEADING_LEVELS[name], text))
+            _mark_subtree(node)
+
+        elif name == "table":
+            # Emit the whole table as one text block with pipe-separated cells.
+            rows = []
+            for row in node.find_all("tr"):
+                cells = [c.get_text(strip=True) for c in row.find_all(["td", "th"])]
+                row_text = " | ".join(c for c in cells if c)
+                if row_text:
+                    rows.append(row_text)
+            if rows:
+                items.append(("text", " ".join(rows)))
+            _mark_subtree(node)
+
+        elif name in {"p", "li", "blockquote", "dd", "dt", "caption"}:
+            # Emit leaf-level content blocks; recurse into any that contain headings.
+            if not node.find(["h1", "h2", "h3", "h4"]):
+                text = node.get_text(separator=" ", strip=True)
+                if text:
+                    items.append(("text", text))
+                _mark_subtree(node)
+            else:
+                for child in node.children:
+                    _collect(child)
+
+        else:
+            for child in node.children:
+                _collect(child)
+
+    body = soup.find("body") or soup
+    for child in body.children:
+        _collect(child)
+
+    # ── Step 2: group items by current heading context ───────────────────────
+    heading_stack: dict[int, str] = {}
+    current_words: list[str] = []
+    sections: list[tuple[str, str]] = []  # (prefix, text)
+
+    for item in items:
+        if item[0] == "heading":
+            _, level, text = item
+            if current_words:
+                sections.append((_format_heading_prefix(heading_stack), " ".join(current_words)))
+                current_words = []
+            # Replace this level (and any deeper levels) with the new heading.
+            for k in list(heading_stack.keys()):
+                if k >= level:
+                    del heading_stack[k]
+            heading_stack[level] = text
+        else:
+            current_words.extend(item[1].split())
+
+    if current_words:
+        sections.append((_format_heading_prefix(heading_stack), " ".join(current_words)))
+
+    # ── Step 3: chunk each section, prepending its heading prefix ────────────
+    all_chunks: list[str] = []
+    for prefix, text in sections:
+        for sub in chunk_text(text, chunk_size, overlap):
+            all_chunks.append(f"[{prefix}] {sub}" if prefix else sub)
+
+    return [c for c in all_chunks if c.strip()]
 
 
 # Suffixes stripped from <title> tags to get a clean page name.
@@ -307,9 +425,9 @@ def run_indexer() -> None:
         except ResourceNotFoundError:
             log.warning("Blob not found in storage, skipping: %s/%s", container, blob_name)
             continue
-        text = extract_pdf_text(doc_intel_client, data) if source_type == "pdf" else extract_html_text(data)
+        text = extract_pdf_text(doc_intel_client, data) if source_type == "pdf" else None
         page_title = extract_html_title(data) if source_type == "html" else ""
-        chunks = chunk_text(text)
+        chunks = chunk_text(text) if source_type == "pdf" else extract_html_chunks(data)
         if not chunks:
             index_state[blob_name] = {
                 "chunk_count": 0,
