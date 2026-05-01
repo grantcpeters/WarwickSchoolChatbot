@@ -42,10 +42,14 @@ STATE_BLOB_NAME = "_crawler_state.json"
 
 # URL path prefixes to skip — prevents historical/hidden pages from being indexed.
 # Comma-separated list; matched against the URL path (lowercased, leading slash stripped).
-# Default excludes 'hiddenarea/' which contains previous-year fee archives.
+# Default excludes 'hiddenarea/' (previous-year fee archives) and known stale event
+# archive pages that would otherwise confuse open-morning / event queries.
 _EXCLUDE_PATH_PREFIXES: list[str] = [
     p.strip().lower()
-    for p in os.getenv("CRAWL_EXCLUDE_PATHS", "hiddenarea").split(",")
+    for p in os.getenv(
+        "CRAWL_EXCLUDE_PATHS",
+        "hiddenarea,openmorningsept2024,openmorningold,apologies",
+    ).split(",")
     if p.strip()
 ]
 

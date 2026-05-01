@@ -285,6 +285,26 @@ async def retrieve(query: str) -> list[dict]:
                     c for c in raw if c["source"] not in seen_urls
                 ]
 
+            # Remove known stale event-archive pages that are already in the
+            # index and can't be removed without a full re-index.  These pages
+            # are dated slug variants (e.g. openmorningsept2024, openmorningold)
+            # that only confuse the LLM when their single past date dominates.
+            # This list mirrors CRAWL_EXCLUDE_PATHS — once the next crawl runs
+            # they will no longer be re-indexed.
+            _STALE_EVENT_SLUGS = (
+                "openmorningsept2024",
+                "openmorningold",
+                "apologies",
+            )
+            filtered_event = [
+                c for c in raw
+                if not any(
+                    slug in c["source"].lower() for slug in _STALE_EVENT_SLUGS
+                )
+            ]
+            if filtered_event:
+                raw = filtered_event
+
         # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
         # "Monday Tuesday Wednesday") that doesn't match "what's for lunch today" well
