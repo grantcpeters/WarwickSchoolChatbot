@@ -2,12 +2,14 @@
 
 from src.indexer.run_indexer import (
     _format_heading_prefix,
+    _is_stale_section,
+    _current_academic_year_start,
     extract_html_chunks,
     chunk_text,
 )
 
-
 # ── _format_heading_prefix ────────────────────────────────────
+
 
 def test_heading_prefix_single_level():
     assert _format_heading_prefix({1: "Fees"}) == "Fees"
@@ -29,6 +31,7 @@ def test_heading_prefix_empty_stack():
 
 
 # ── extract_html_chunks — basic heading context ───────────────
+
 
 def test_chunks_prepend_h2_heading():
     html = b"""
@@ -57,7 +60,7 @@ def test_chunks_prepend_breadcrumb_for_nested_headings():
 
 
 def test_chunks_separate_sections_under_different_headings():
-    """Content under two sibling headings should be in separate chunks with correct prefixes."""
+    """Stale-year sections are suppressed; only the current-year section survives."""
     html = b"""
     <html><body>
       <h2>Fees 2024/2025</h2>
@@ -70,9 +73,8 @@ def test_chunks_separate_sections_under_different_headings():
     old_chunks = [c for c in chunks if "3,950" in c]
     new_chunks = [c for c in chunks if "4,509" in c]
 
-    assert old_chunks, "2024/25 fee chunk should exist"
+    assert not old_chunks, "2024/25 fee chunk must be suppressed by stale-section filter"
     assert new_chunks, "2025/26 fee chunk should exist"
-    assert all("Fees 2024/2025" in c for c in old_chunks)
     assert all("Fees 2025/2026" in c for c in new_chunks)
 
 
@@ -105,10 +107,14 @@ def test_chunks_no_headings_plain_text():
     """
     chunks = extract_html_chunks(html)
     assert len(chunks) == 1
-    assert chunks[0] == "Welcome to Warwick Prep School. We are an outstanding prep school."
+    assert (
+        chunks[0]
+        == "Welcome to Warwick Prep School. We are an outstanding prep school."
+    )
 
 
 # ── extract_html_chunks — tables ─────────────────────────────
+
 
 def test_chunks_table_emitted_as_pipe_rows():
     """Table cells should be pipe-separated so fee rows stay coherent."""
@@ -123,8 +129,9 @@ def test_chunks_table_emitted_as_pipe_rows():
     </body></html>
     """
     chunks = extract_html_chunks(html)
-    assert any("Reception | \u00a34,509 | \u00a35,411" in c for c in chunks), \
-        "Reception row should appear as pipe-separated within a chunk"
+    assert any(
+        "Reception | \u00a34,509 | \u00a35,411" in c for c in chunks
+    ), "Reception row should appear as pipe-separated within a chunk"
     assert any("Years 3 & 4 | \u00a35,205 | \u00a36,246" in c for c in chunks)
 
 
@@ -148,9 +155,26 @@ def test_chunks_table_inherits_heading_prefix():
 
 # ── extract_html_chunks — real-world fees page scenario ──────
 
+
+def test_chunks_non_year_sections_both_kept():
+    """Sections without year patterns in their headings are never filtered."""
+    html = b"""
+    <html><body>
+      <h2>Prep Department</h2>
+      <p>Years 3 to 6.</p>
+      <h2>Pre-Prep Department</h2>
+      <p>Reception to Year 2.</p>
+    </body></html>
+    """
+    chunks = extract_html_chunks(html)
+    assert any("Years 3 to 6" in c for c in chunks)
+    assert any("Reception to Year 2" in c for c in chunks)
+
+
 def test_chunks_fee_page_two_years_correctly_labelled():
-    """Simulate the warwickprep.com/admissions/fees page structure with two year sections.
-    The critical regression test: old fees must be labelled 2024/25, new fees 2025/26."""
+    """With stale-section suppression, only the current year's fees appear in chunks.
+    The 2024/25 section must be silently dropped; the 2025/26 section must survive.
+    """
     html = b"""
     <html><body>
       <h1>Fees</h1>
@@ -169,23 +193,15 @@ def test_chunks_fee_page_two_years_correctly_labelled():
     """
     chunks = extract_html_chunks(html)
 
-    # Find chunks containing old and new fees
     new_fee_chunks = [c for c in chunks if "4,509" in c or "5,205" in c]
     old_fee_chunks = [c for c in chunks if "3,950" in c or "4,560" in c]
 
     assert new_fee_chunks, "2025/26 fee data must appear in chunks"
-    assert old_fee_chunks, "2024/25 fee data must appear in chunks"
-
-    # New fees must be labelled 2025/2026
-    for c in new_fee_chunks:
-        assert "2025/2026" in c, f"Chunk with new fees must say 2025/2026: {c!r}"
-
-    # Old fees must be labelled 2024/2025
-    for c in old_fee_chunks:
-        assert "2024/2025" in c, f"Chunk with old fees must say 2024/2025: {c!r}"
+    assert not old_fee_chunks, "2024/25 fee data must be suppressed by stale-section filter"
 
 
 # ── extract_html_chunks — nav/footer stripped ────────────────
+
 
 def test_chunks_strips_nav_and_footer():
     html = b"""
@@ -222,6 +238,7 @@ def test_chunks_strips_script_and_style():
 
 # ── extract_html_chunks — chunking size ──────────────────────
 
+
 def test_chunks_long_section_split_into_multiple_chunks():
     """A section with more than chunk_size words must produce multiple chunks."""
     words = " ".join(f"word{i}" for i in range(600))
@@ -246,7 +263,44 @@ def test_chunks_overlap_shared_words_between_adjacent_chunks():
     assert overlap_found, "Adjacent chunks must share overlapping words"
 
 
+# ── _is_stale_section ────────────────────────────────────────
+
+
+def test_stale_section_detects_past_academic_year():
+    """Headings naming a past academic year should be flagged stale."""
+    assert _is_stale_section("Fees for the Academic Year 2024/2025")
+    assert _is_stale_section("Fees 2024/25")
+
+
+def test_stale_section_not_stale_for_current_year():
+    """The current academic year should not be flagged as stale."""
+    current = _current_academic_year_start()
+    assert not _is_stale_section(
+        f"Fees for the Academic Year {current}/{current + 1}"
+    )
+
+
+def test_stale_section_detects_last_year_phrase():
+    assert _is_stale_section("Last Year's Fees")
+    assert _is_stale_section("Previous Year Fees")
+
+
+def test_stale_section_not_stale_for_no_year():
+    assert not _is_stale_section("Main School Fees")
+    assert not _is_stale_section("Contact Us")
+    assert not _is_stale_section("")
+
+
+def test_stale_section_not_stale_future_year():
+    """A section for a future academic year must never be filtered."""
+    current = _current_academic_year_start()
+    assert not _is_stale_section(
+        f"Fees for the Academic Year {current + 1}/{current + 2}"
+    )
+
+
 # ── chunk_text (kept for PDF path) ───────────────────────────
+
 
 def test_chunk_text_basic_split():
     words = " ".join(str(i) for i in range(100))

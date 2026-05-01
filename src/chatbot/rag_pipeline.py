@@ -18,21 +18,41 @@ from src.shared.azure_credentials import get_service_credential
 load_dotenv()
 
 INDEX_NAME = os.getenv("AZURE_SEARCH_INDEX_NAME", "warwickprep-content")
-TOP_K_RETRIEVE = int(os.getenv("RAG_TOP_K_RETRIEVE", "12"))  # how many chunks to fetch from search
-TOP_K = int(os.getenv("RAG_TOP_K", "5"))  # how many to pass to the model (after re-ranking)
+TOP_K_RETRIEVE = int(
+    os.getenv("RAG_TOP_K_RETRIEVE", "12")
+)  # how many chunks to fetch from search
+TOP_K = int(
+    os.getenv("RAG_TOP_K", "5")
+)  # how many to pass to the model (after re-ranking)
 CHAT_DEPLOYMENT = os.getenv("AZURE_OPENAI_CHAT_DEPLOYMENT", "gpt-4o-mini")
-EMBEDDING_DEPLOYMENT = os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small")
+EMBEDDING_DEPLOYMENT = os.getenv(
+    "AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-3-small"
+)
 
 # Queries that are likely about school events/dates — triggers admissions-page boost
 # and news-tier demotion so stale blog posts don't outrank canonical pages.
 _EVENT_KW = (
-    "open day", "open morning", "visit", "term date", "term dates",
-    "holiday", "school event", "open afternoon",
+    "open day",
+    "open morning",
+    "visit",
+    "term date",
+    "term dates",
+    "holiday",
+    "school event",
+    "open afternoon",
 )
 
 # Queries about fees/tuition — triggers filtering of hiddenarea/ chunks (historical fee
 # archives) so the current academic year's fees from /admissions/fees always win.
-_FEES_KW = ("fee", "fees", "tuition", "term cost", "school fees", "term fees", "how much")
+_FEES_KW = (
+    "fee",
+    "fees",
+    "tuition",
+    "term cost",
+    "school fees",
+    "term fees",
+    "how much",
+)
 
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
 # so the weekly PDF menus surface even though they don't match "what's for lunch" well.
@@ -83,19 +103,39 @@ Warwick Prep School. For anything else, please use a general search engine."
 
 
 _MONTH_MAP = {
-    "jan": 1, "january": 1, "feb": 2, "february": 2, "mar": 3, "march": 3,
-    "apr": 4, "april": 4, "may": 5, "jun": 6, "june": 6, "jul": 7, "july": 7,
-    "aug": 8, "august": 8, "sep": 9, "sept": 9, "september": 9,
-    "oct": 10, "october": 10, "nov": 11, "november": 11, "dec": 12, "december": 12,
+    "jan": 1,
+    "january": 1,
+    "feb": 2,
+    "february": 2,
+    "mar": 3,
+    "march": 3,
+    "apr": 4,
+    "april": 4,
+    "may": 5,
+    "jun": 6,
+    "june": 6,
+    "jul": 7,
+    "july": 7,
+    "aug": 8,
+    "august": 8,
+    "sep": 9,
+    "sept": 9,
+    "september": 9,
+    "oct": 10,
+    "october": 10,
+    "nov": 11,
+    "november": 11,
+    "dec": 12,
+    "december": 12,
 }
 _DATE_FULL = re.compile(
-    r'\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|'
-    r'october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b',
+    r"\b(\d{1,2})\s+(january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b",
     re.IGNORECASE,
 )
 _DATE_MON_YEAR = re.compile(
-    r'\b(january|february|march|april|may|june|july|august|september|'
-    r'october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b',
+    r"\b(january|february|march|april|may|june|july|august|september|"
+    r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b",
     re.IGNORECASE,
 )
 
@@ -105,7 +145,11 @@ def _most_recent_date(text: str) -> int:
     found: list[datetime] = []
     for m in _DATE_FULL.finditer(text):
         try:
-            found.append(datetime(_int(m.group(3)), _MONTH_MAP[m.group(2).lower()], int(m.group(1))))
+            found.append(
+                datetime(
+                    _int(m.group(3)), _MONTH_MAP[m.group(2).lower()], int(m.group(1))
+                )
+            )
         except ValueError:
             pass
     for m in _DATE_MON_YEAR.finditer(text):
@@ -118,6 +162,16 @@ def _most_recent_date(text: str) -> int:
 
 def _int(s: str) -> int:
     return int(s)
+
+
+def _parse_iso(s: str | None) -> int:
+    """Return date ordinal for an ISO 8601 datetime string, or 0 if missing/invalid."""
+    if not s:
+        return 0
+    try:
+        return datetime.fromisoformat(s.replace("Z", "+00:00")).toordinal()
+    except ValueError:
+        return 0
 
 
 def _build_system_prompt() -> str:
@@ -155,9 +209,11 @@ async def retrieve(query: str) -> list[dict]:
     openai = _get_openai()
     vector = await _embed(openai, query)
 
-    select_fields = ["content", "source_url", "source_type", "page_title"]
+    select_fields = ["content", "source_url", "source_type", "page_title", "last_modified"]
 
-    async def _do_search(search_client, text: str, vec_query, n: int, fields: list[str]) -> list[dict]:
+    async def _do_search(
+        search_client, text: str, vec_query, n: int, fields: list[str]
+    ) -> list[dict]:
         try:
             results = await search_client.search(
                 search_text=text,
@@ -171,13 +227,14 @@ async def retrieve(query: str) -> list[dict]:
                     "source": r["source_url"],
                     "type": r["source_type"],
                     "title": r.get("page_title") or "",
+                    "last_modified": r.get("last_modified"),
                 }
                 async for r in results
             ]
         except Exception as e:
-            if "page_title" not in str(e):
+            if "page_title" not in str(e) and "last_modified" not in str(e):
                 raise
-            # page_title not yet in index — retry without it
+            # Optional fields not yet in index — retry with base fields only
             results = await search_client.search(
                 search_text=text,
                 vector_queries=[vec_query],
@@ -190,6 +247,7 @@ async def retrieve(query: str) -> list[dict]:
                     "source": r["source_url"],
                     "type": r["source_type"],
                     "title": "",
+                    "last_modified": None,
                 }
                 async for r in results
             ]
@@ -200,7 +258,9 @@ async def retrieve(query: str) -> list[dict]:
             k_nearest_neighbors=TOP_K_RETRIEVE,
             fields="content_vector",
         )
-        raw = await _do_search(search_client, query, vector_query, TOP_K_RETRIEVE, select_fields)
+        raw = await _do_search(
+            search_client, query, vector_query, TOP_K_RETRIEVE, select_fields
+        )
 
         # For event/date queries, run a supplemental keyword search targeting
         # /admissions/ pages. These are sparse pages that rarely win on keyword
@@ -216,10 +276,14 @@ async def retrieve(query: str) -> list[dict]:
                 search_client, f"admissions {query}", supp_vq, 5, select_fields
             )
             # Only keep chunks that are actually from the admissions section
-            admissions_chunks = [c for c in supp if "/admissions/" in c["source"].lower()]
+            admissions_chunks = [
+                c for c in supp if "/admissions/" in c["source"].lower()
+            ]
             if admissions_chunks:
                 seen_urls = {c["source"] for c in admissions_chunks}
-                raw = admissions_chunks + [c for c in raw if c["source"] not in seen_urls]
+                raw = admissions_chunks + [
+                    c for c in raw if c["source"] not in seen_urls
+                ]
 
         # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
@@ -234,15 +298,23 @@ async def retrieve(query: str) -> list[dict]:
             menu_supp = await _do_search(
                 search_client,
                 "weekly lunch menu monday tuesday wednesday thursday friday option 1 term week",
-                menu_vq, 5, select_fields,
+                menu_vq,
+                5,
+                select_fields,
             )
             menu_chunks = [
-                c for c in menu_supp
-                if "download.asp" in c["source"].lower() and "type=pdf" in c["source"].lower()
+                c
+                for c in menu_supp
+                if "download.asp" in c["source"].lower()
+                and "type=pdf" in c["source"].lower()
             ]
             if menu_chunks:
                 seen_urls = {c["source"] for c in raw}
-                raw = menu_chunks + [c for c in raw if c["source"] not in {c2["source"] for c2 in menu_chunks}]
+                raw = menu_chunks + [
+                    c
+                    for c in raw
+                    if c["source"] not in {c2["source"] for c2 in menu_chunks}
+                ]
 
         # For fees queries, strip historical fee archive pages (hiddenarea/) so that
         # the current year's fees in /admissions/fees always take precedence.
@@ -252,21 +324,20 @@ async def retrieve(query: str) -> list[dict]:
             if current_fees:
                 raw = current_fees
 
-    # Re-rank (event/date queries only):
-    #  - Demote news/blog posts below canonical section pages (stale event info)
-    #  - Within each tier, sort by most recent date mentioned in content
-    # For all other queries, trust the search relevance order — reranking hurts
-    # content that has no dates (e.g. menu PDFs, facility descriptions).
-    if is_event_query:
-        _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
+    # Re-rank all queries:
+    #  - Demote news/blog posts below canonical section pages (stale event/activity info)
+    #  - Within each tier, prefer pages with a more recent last_modified timestamp,
+    #    then fall back to the most recent date mentioned in the content.
+    _NEWS_PATHS = ("/news", "/blog", "/latest-news", "/news-and-events")
 
-        def _rank_key(chunk: dict) -> tuple:
-            url = chunk["source"].lower()
-            path_rank = 1 if any(p in url for p in _NEWS_PATHS) else 0
-            date_rank = -_most_recent_date(chunk["content"])  # negate: higher ordinal → sorts first
-            return (path_rank, date_rank)
+    def _rank_key(chunk: dict) -> tuple:
+        url = chunk["source"].lower()
+        path_rank = 1 if any(p in url for p in _NEWS_PATHS) else 0
+        lm_rank = -_parse_iso(chunk.get("last_modified"))
+        date_rank = -_most_recent_date(chunk["content"])
+        return (path_rank, lm_rank, date_rank)
 
-        raw.sort(key=_rank_key)
+    raw.sort(key=_rank_key)
 
     return raw[:TOP_K]
 
@@ -286,14 +357,17 @@ async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[s
     #   - skip hex-hash filenames (old blob-named entries that slipped through)
     #   - skip malformed URLs where the netloc contains '@' (scraped email addresses)
     from urllib.parse import urlparse
-    _HEX_HASH_RE = re.compile(r'^[0-9a-f]{16,}\.(pdf|html)$', re.IGNORECASE)
+
+    _HEX_HASH_RE = re.compile(r"^[0-9a-f]{16,}\.(pdf|html)$", re.IGNORECASE)
     seen: dict[str, str] = {}
     for c in chunks:
         url = c["source"]
         if not url.startswith("http"):
             continue
         parsed_url = urlparse(url)
-        if parsed_url.username:  # netloc has user@host — malformed (scraped email as URL prefix)
+        if (
+            parsed_url.username
+        ):  # netloc has user@host — malformed (scraped email as URL prefix)
             continue
         path_lower = parsed_url.path.lower()
         filename = path_lower.split("/")[-1]
@@ -304,7 +378,12 @@ async def chat(query: str, history: list[dict] | None = None) -> AsyncIterator[s
         if url not in seen or (not seen[url] and c["title"]):
             seen[url] = c["title"]
 
-    messages = [{"role": "system", "content": _build_system_prompt() + f"\n\nContext:\n{context}"}]
+    messages = [
+        {
+            "role": "system",
+            "content": _build_system_prompt() + f"\n\nContext:\n{context}",
+        }
+    ]
     if history:
         messages.extend(history[-10:])  # limit history to last 10 turns
     messages.append({"role": "user", "content": query})

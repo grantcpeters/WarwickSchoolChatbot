@@ -23,6 +23,7 @@ import textwrap
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from dotenv import load_dotenv
+
 load_dotenv()
 
 QUESTIONS = [
@@ -36,6 +37,7 @@ QUESTIONS = [
     "What are the Nursery fees?",
     "What sports does the school offer?",
     "Is there an after-school care programme?",
+    "What is on the school lunch menu?",
 ]
 
 WIDTH = 100
@@ -65,7 +67,7 @@ async def run_question(n: int, question: str) -> None:
     answer_parts = []
     async for token in chat(question, history=[]):
         if token.startswith("__sources__:"):
-            sources_json = token[len("__sources__:"):]
+            sources_json = token[len("__sources__:") :]
             print()
             print(f"  Sources: {sources_json}")
         else:
@@ -84,14 +86,17 @@ async def main(selected: list[int]) -> None:
         await run_question(n, QUESTIONS[n - 1])
 
     print(f"\n{SEP}")
-    print("  All questions complete. Please review each answer above before approving deployment.")
+    print(
+        "  All questions complete. Please review each answer above before approving deployment."
+    )
     print(SEP)
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
-        "--questions", "-q",
+        "--questions",
+        "-q",
         nargs="*",
         type=int,
         default=list(range(1, len(QUESTIONS) + 1)),
