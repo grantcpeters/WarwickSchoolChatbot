@@ -15,12 +15,12 @@ import sys
 import uuid
 import tempfile
 
-RESOURCE_GROUP   = "warwickschoolchatbot-rg"
-WORKSPACE_NAME   = "warwickprep-5bwffhz4ojyvq-logs"
-WORKBOOK_NAME    = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"  # stable GUID for this workbook
+RESOURCE_GROUP = "warwickschoolchatbot-rg"
+WORKSPACE_NAME = "warwickprep-5bwffhz4ojyvq-logs"
+WORKBOOK_NAME = "a1b2c3d4-e5f6-7890-abcd-ef1234567890"  # stable GUID for this workbook
 WORKBOOK_DISPLAY = "Ask Warwick Usage Report"
-LOCATION         = "uksouth"
-API_VERSION      = "2022-04-01"
+LOCATION = "uksouth"
+API_VERSION = "2022-04-01"
 
 
 def az(cmd: str) -> str:
@@ -50,13 +50,13 @@ AppServiceHTTPLogs
     ['Feedback votes']= countif(CsUriStem == "/feedback" and CsMethod == "POST"),
     ['Total requests']= count()"""
 
-_Q_MSG   = '''coalesce(extract(@"msg='([^']+)'", 1, ResultDescription), extract(@'msg="([^"]+)"', 1, ResultDescription))'''
-_Q_SNIP  = '''coalesce(extract(@"response_snippet='([^']+)'", 1, ResultDescription), extract(@'response_snippet="([^"]+)"', 1, ResultDescription))'''
+_Q_MSG = """coalesce(extract(@"msg='([^']+)'", 1, ResultDescription), extract(@'msg="([^"]+)"', 1, ResultDescription))"""
+_Q_SNIP = """coalesce(extract(@"response_snippet='([^']+)'", 1, ResultDescription), extract(@'response_snippet="([^"]+)"', 1, ResultDescription))"""
 
 Q_FEEDBACK = (
-    'AppServiceConsoleLogs\n'
+    "AppServiceConsoleLogs\n"
     '| where ResultDescription has "FEEDBACK"\n'
-    "| extend Rating    = extract(\"rating=(GOOD|BAD)\", 1, ResultDescription)\n"
+    '| extend Rating    = extract("rating=(GOOD|BAD)", 1, ResultDescription)\n'
     f"| extend Question  = {_Q_MSG}\n"
     f"| extend ['Answer preview'] = {_Q_SNIP}\n"
     "| project TimeGenerated, Rating, Question, ['Answer preview']\n"
@@ -64,7 +64,7 @@ Q_FEEDBACK = (
 )
 
 Q_TOP = (
-    'AppServiceConsoleLogs\n'
+    "AppServiceConsoleLogs\n"
     '| where ResultDescription has "PROMPT"\n'
     f"| extend Question = {_Q_MSG}\n"
     "| where isnotempty(Question)\n"
@@ -74,23 +74,24 @@ Q_TOP = (
 )
 
 Q_ALL = (
-    'AppServiceConsoleLogs\n'
+    "AppServiceConsoleLogs\n"
     '| where ResultDescription has "PROMPT"\n'
     '| extend Turns    = toint(extract(@"history_turns=(\\d+)", 1, ResultDescription))\n'
     f"| extend Question = {_Q_MSG}\n"
-    "| project ['Time (UTC)']=TimeGenerated, Turns, Question\n"
-    "| order by TimeGenerated desc"
+    "| order by TimeGenerated desc\n"
+    "| project ['Time (UTC)']=TimeGenerated, Turns, Question"
 )
 
 
 # ── Workbook item builders ────────────────────────────────────────────────────
+
 
 def text_item(markdown: str) -> dict:
     return {
         "type": 1,
         "content": {"json": markdown},
         "name": f"text-{uuid.uuid4().hex[:8]}",
-        "styleSettings": {}
+        "styleSettings": {},
     }
 
 
@@ -132,11 +133,26 @@ def build_workbook(workspace_resource_id: str) -> dict:
                             "value": {"durationMs": 86400000},
                             "typeSettings": {
                                 "selectableValues": [
-                                    {"durationMs": 3600000,    "displayName": "Last 1 hour"},
-                                    {"durationMs": 86400000,   "displayName": "Last 24 hours"},
-                                    {"durationMs": 172800000,  "displayName": "Last 48 hours"},
-                                    {"durationMs": 604800000,  "displayName": "Last 7 days"},
-                                    {"durationMs": 2592000000, "displayName": "Last 30 days"},
+                                    {
+                                        "durationMs": 3600000,
+                                        "displayName": "Last 1 hour",
+                                    },
+                                    {
+                                        "durationMs": 86400000,
+                                        "displayName": "Last 24 hours",
+                                    },
+                                    {
+                                        "durationMs": 172800000,
+                                        "displayName": "Last 48 hours",
+                                    },
+                                    {
+                                        "durationMs": 604800000,
+                                        "displayName": "Last 7 days",
+                                    },
+                                    {
+                                        "durationMs": 2592000000,
+                                        "displayName": "Last 30 days",
+                                    },
                                 ]
                             },
                         }
@@ -147,7 +163,9 @@ def build_workbook(workspace_resource_id: str) -> dict:
                 },
                 "name": "parameters",
             },
-            text_item("## 1. Unique Visitors\nIPs that sent at least one chat message."),
+            text_item(
+                "## 1. Unique Visitors\nIPs that sent at least one chat message."
+            ),
             query_item("visitors", Q_VISITORS, "table"),
             text_item("## 2. Total Site Hits"),
             query_item("hits", Q_HITS, "table"),
@@ -164,6 +182,7 @@ def build_workbook(workspace_resource_id: str) -> dict:
 
 
 # ── Main ──────────────────────────────────────────────────────────────────────
+
 
 def main():
     print("Ask Warwick — Deploy Usage Workbook")
@@ -209,11 +228,11 @@ def main():
     print("Deploying to Azure...", end=" ", flush=True)
     try:
         az(
-            f'resource create'
+            f"resource create"
             f' --id "{workbook_resource_id}"'
-            f' --api-version {API_VERSION}'
-            f' --is-full-object'
-            f' --properties @{tf.name}'
+            f" --api-version {API_VERSION}"
+            f" --is-full-object"
+            f" --properties @{tf.name}"
         )
         print("OK")
     finally:
