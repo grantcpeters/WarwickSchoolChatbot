@@ -54,6 +54,32 @@ _FEES_KW = (
     "how much",
 )
 
+# Queries about school holidays / term breaks — triggers supplemental search using
+# term-dates vocabulary so the /information/termdates pages surface reliably when
+# the query phrasing ("summer holidays", "half term") doesn't match "term dates" well
+# in vector space (they're separate semantic concepts despite referring to the same page).
+_TERM_DATE_KW = (
+    "summer holiday",
+    "summer holidays",
+    "half term",
+    "half-term",
+    "christmas holiday",
+    "christmas holidays",
+    "easter holiday",
+    "easter holidays",
+    "school holiday",
+    "school holidays",
+    "school break",
+    "school calendar",
+    "holiday dates",
+    "when does school",
+    "when does term",
+    "end of term",
+    "start of term",
+    "breaks up",
+    "goes back",
+)
+
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
 # so the weekly PDF menus surface even though they don't match "what's for lunch" well.
 _MENU_KW = ("lunch", "menu", "food today", "catering", "eat today", "dinner")
@@ -215,7 +241,13 @@ async def retrieve(query: str) -> list[dict]:
     openai = _get_openai()
     vector = await _embed(openai, query)
 
-    select_fields = ["content", "source_url", "source_type", "page_title", "last_modified"]
+    select_fields = [
+        "content",
+        "source_url",
+        "source_type",
+        "page_title",
+        "last_modified",
+    ]
 
     async def _do_search(
         search_client, text: str, vec_query, n: int, fields: list[str]
@@ -303,13 +335,49 @@ async def retrieve(query: str) -> list[dict]:
                 "apologies",
             )
             filtered_event = [
-                c for c in raw
-                if not any(
-                    slug in c["source"].lower() for slug in _STALE_EVENT_SLUGS
-                )
+                c
+                for c in raw
+                if not any(slug in c["source"].lower() for slug in _STALE_EVENT_SLUGS)
             ]
             if filtered_event:
                 raw = filtered_event
+
+        # For school holiday/break queries, run a keyword-only supplemental search so
+        # the /information/termdates page always surfaces.  Using keyword-only (no
+        # vector) is deliberate: "summer holidays" sits far from "term dates" in vector
+        # space, so mixing the original query vector into this supplemental search drags
+        # results away from the termdates page.
+        is_term_date_query = any(kw in query.lower() for kw in _TERM_DATE_KW)
+        if is_term_date_query:
+            try:
+                td_text_results = await search_client.search(
+                    search_text="term dates academic year summer spring autumn half term holiday",
+                    top=5,
+                    select=select_fields,
+                )
+                td_supp = [
+                    {
+                        "content": r["content"],
+                        "source": r["source_url"],
+                        "type": r["source_type"],
+                        "title": r.get("page_title") or "",
+                        "last_modified": r.get("last_modified"),
+                    }
+                    async for r in td_text_results
+                ]
+            except Exception:
+                td_supp = []
+            termdates_chunks = [
+                c
+                for c in td_supp
+                if "termdates" in c["source"].lower()
+                or "term-dates" in c["source"].lower()
+            ]
+            if termdates_chunks:
+                seen_term = {c["source"] for c in termdates_chunks}
+                raw = termdates_chunks + [
+                    c for c in raw if c["source"] not in seen_term
+                ]
 
         # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
