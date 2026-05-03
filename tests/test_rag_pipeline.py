@@ -845,15 +845,19 @@ def _make_staff_search_instance():
 
 # -- Nursery (The Squirrels Nursery, boys & girls from 3+) -----
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    "who teaches nursery",
-    "who are the nursery teachers",
-    "who is the head of nursery",
-    "nursery teacher",
-    "who are the squirrels nursery staff",
-    "who teaches in the squirrels",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "who teaches nursery",
+        "who are the nursery teachers",
+        "who is the head of nursery",
+        "nursery teacher",
+        "who are the squirrels nursery staff",
+        "who teaches in the squirrels",
+    ],
+)
 async def test_staff_list_pinned_for_nursery_queries(query):
     """
     Nursery queries must surface the staff-list page first.
@@ -878,24 +882,28 @@ async def test_staff_list_pinned_for_nursery_queries(query):
 
 # -- Reception & Pre-Prep (boys & girls from 4–7) --------------
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    # Reception (4 classes, first year of Reception/Pre-Prep)
-    "who are the reception teachers",
-    "who is the reception form teacher",
-    # Year 1 (Pre-Prep, boys and girls)
-    "who are the year 1 teachers",
-    "who are all the year 1 teachers",
-    "year 1 form teacher",
-    "who teaches year 1",
-    # Year 2 (Pre-Prep, boys and girls)
-    "who are the year 2 teachers",
-    "year 2 form teacher",
-    # Pre-Prep department as a whole
-    "who teaches in pre-prep",
-    "pre-prep teachers",
-    "who are the pre-prep staff",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Reception (4 classes, first year of Reception/Pre-Prep)
+        "who are the reception teachers",
+        "who is the reception form teacher",
+        # Year 1 (Pre-Prep, boys and girls)
+        "who are the year 1 teachers",
+        "who are all the year 1 teachers",
+        "year 1 form teacher",
+        "who teaches year 1",
+        # Year 2 (Pre-Prep, boys and girls)
+        "who are the year 2 teachers",
+        "year 2 form teacher",
+        # Pre-Prep department as a whole
+        "who teaches in pre-prep",
+        "pre-prep teachers",
+        "who are the pre-prep staff",
+    ],
+)
 async def test_staff_list_pinned_for_pre_prep_queries(query):
     """
     Reception and Pre-Prep queries (Years 1-2, boys & girls, 4 classes per year)
@@ -920,24 +928,28 @@ async def test_staff_list_pinned_for_pre_prep_queries(query):
 
 # -- Prep department (girls from 7–11, Years 3–6) --------------
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    # Year 3 (first Prep year, supported by full-time TA)
-    "who are the year 3 teachers",
-    "year 3 form teacher",
-    # Year 4
-    "who are the year 4 teachers",
-    "year 4 form teacher",
-    # Year 5 (Maths taught in ability groups from Y5)
-    "who are the year 5 teachers",
-    "year 5 form teacher",
-    # Year 6 (oldest year group)
-    "who are the year 6 teachers",
-    "year 6 form teacher",
-    # Prep department as a whole
-    "who teaches in the prep department",
-    "who are the prep teachers",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Year 3 (first Prep year, supported by full-time TA)
+        "who are the year 3 teachers",
+        "year 3 form teacher",
+        # Year 4
+        "who are the year 4 teachers",
+        "year 4 form teacher",
+        # Year 5 (Maths taught in ability groups from Y5)
+        "who are the year 5 teachers",
+        "year 5 form teacher",
+        # Year 6 (oldest year group)
+        "who are the year 6 teachers",
+        "year 6 form teacher",
+        # Prep department as a whole
+        "who teaches in the prep department",
+        "who are the prep teachers",
+    ],
+)
 async def test_staff_list_pinned_for_prep_queries(query):
     """
     Prep department queries (Years 3-6, girls only, 2-3 classes per year) must
@@ -962,27 +974,31 @@ async def test_staff_list_pinned_for_prep_queries(query):
 
 # -- Senior Leadership Team queries ----------------------------
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    # Headmistress — Mrs Hellen Dodsworth
-    "who is the headmistress",
-    "who is the head teacher",
-    "who is the headteacher",
-    # Deputy Head — Mrs Dee Alder
-    "who is the deputy head",
-    # Director of Studies — Mrs Julie Johnson
-    "who is the director of studies",
-    # Director of Sport — Miss Katie Clark
-    "who is the director of sport",
-    # Head of Pre-Prep — Mrs Gill Smeeton
-    "who is the head of pre-prep",
-    # Head of Prep — Mrs Deborah Ward
-    "who is the head of prep",
-    # Leadership team as a whole
-    "who is in the senior leadership team",
-    "who runs the school",
-    "senior leadership team",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Headmistress — Mrs Hellen Dodsworth
+        "who is the headmistress",
+        "who is the head teacher",
+        "who is the headteacher",
+        # Deputy Head — Mrs Dee Alder
+        "who is the deputy head",
+        # Director of Studies — Mrs Julie Johnson
+        "who is the director of studies",
+        # Director of Sport — Miss Katie Clark
+        "who is the director of sport",
+        # Head of Pre-Prep — Mrs Gill Smeeton
+        "who is the head of pre-prep",
+        # Head of Prep — Mrs Deborah Ward
+        "who is the head of prep",
+        # Leadership team as a whole
+        "who is in the senior leadership team",
+        "who runs the school",
+        "senior leadership team",
+    ],
+)
 async def test_staff_list_pinned_for_leadership_queries(query):
     """
     Queries about leadership roles defined in the school structure must surface
@@ -1007,16 +1023,23 @@ async def test_staff_list_pinned_for_leadership_queries(query):
 
 # -- Whole-school staff queries --------------------------------
 
+
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    "list all teachers at warwick prep",
-    "staff list",
-    "who are all the staff",
-    "list of teachers",
-    "all members of staff",
-    "form teacher",
-    "who are the form teachers",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        "list all teachers at warwick prep",
+        "staff list",
+        "who are all the staff",
+        "list of teachers",
+        "all members of staff",
+        "form teacher",
+        "who are the form teachers",
+        "list the teachers",                   # real user query from eval run
+        "list all the teachers",               # "all the teachers" ≠ "all teachers"
+        "list all the teachers in warwick prep",  # real user query that failed eval
+    ],
+)
 async def test_staff_list_pinned_for_whole_school_queries(query):
     """Whole-school staff queries must surface the staff-list page first."""
     with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
@@ -1035,3 +1058,86 @@ async def test_staff_list_pinned_for_whole_school_queries(query):
             f"Got: {results[0]['source']}"
         )
 
+
+# ── Term dates — holiday keyword retrieval ────────────────────
+#
+# Queries using colloquial holiday phrasing ("summer vacation", "half term")
+# must surface the /information/termdates page at position 0 via the
+# keyword-only supplemental search.  The test verifies the supplemental
+# search fires (call_count == 2) and that the termdates chunk leads.
+
+_TERMDATES_URL = "https://www.warwickprep.com/information/termdates"
+_TERMDATES_CONTENT = (
+    "Warwick Preparatory School Term Dates Academic Year 2025-2026 "
+    "Autumn Term starts 3 September 2025 ends 12 December 2025 "
+    "Spring Term starts 5 January 2026 ends 27 March 2026 "
+    "Summer Term starts 14 April 2026 ends 9 July 2026 "
+    "May Half Term 25 May 2026 to 29 May 2026"
+)
+
+
+def _make_termdates_search_instance():
+    """
+    Returns a SearchClient mock that returns the termdates chunk for the
+    keyword-only supplemental search and irrelevant results otherwise.
+    """
+    termdates_chunk = make_search_result(
+        content=_TERMDATES_CONTENT,
+        source_url=_TERMDATES_URL,
+        page_title="Term Dates",
+    )
+    irrelevant = make_search_result(
+        content="School newsletter about summer activities.",
+        source_url="https://www.warwickprep.com/attachments/download.asp?file=844&type=pdf",
+        page_title="Newsletter",
+    )
+
+    def search_side_effect(*args, **kwargs):
+        search_text = kwargs.get("search_text", args[0] if args else "")
+        # The supplemental term-date search fires with "term dates academic year"
+        if "term dates academic year" in search_text.lower():
+            return AsyncIteratorMock([termdates_chunk])
+        return AsyncIteratorMock([irrelevant, irrelevant, irrelevant])
+
+    instance = AsyncMock()
+    instance.__aenter__ = AsyncMock(return_value=instance)
+    instance.__aexit__ = AsyncMock(return_value=False)
+    instance.search.side_effect = search_side_effect
+    return instance
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    # Phrases explicitly in _TERM_DATE_KW
+    "when are the summer holidays",
+    "when is the summer holiday",
+    "when is the christmas holiday",
+    "when are the easter holidays",
+    "what date is half term",
+    "when does school break up",
+    "when does term end",
+    "when does school go back",
+    # "summer vacation" — US/informal phrasing added after real eval failure
+    "when is the summer vacation",
+    "when are the summer vacations",
+])
+async def test_termdates_page_pinned_for_holiday_queries(query):
+    """
+    Holiday phrasing queries must surface the term-dates page at position 0
+    via the keyword-only supplemental search.
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_termdates_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _TERMDATES_URL, (
+            f"Termdates page not at position 0 for holiday query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )

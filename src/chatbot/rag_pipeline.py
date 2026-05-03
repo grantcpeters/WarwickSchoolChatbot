@@ -61,6 +61,7 @@ _FEES_KW = (
 _TERM_DATE_KW = (
     "summer holiday",
     "summer holidays",
+    "summer vacation",   # US/informal phrasing for summer break
     "half term",
     "half-term",
     "christmas holiday",
@@ -94,30 +95,32 @@ _STAFF_KW = (
     "staff list",
     "list of teachers",
     "list of staff",
+    "list the teachers",  # "list the teachers", "list all the teachers"
     "all teachers",
+    "all the teachers",   # "list all the teachers" — "all teachers" ≠ "all the teachers"
     "all staff",
-    "all the staff",      # "who are all the staff" — "all staff" ≠ "all the staff"
+    "all the staff",  # "who are all the staff" — "all staff" ≠ "all the staff"
     "who are the staff",
     "member of staff",
     "members of staff",
     # The Squirrels Nursery (boys and girls from 3+)
     # Three classes, each with an Early Years specialist and qualified teacher
     "nursery teacher",
-    "head of nursery",    # Mrs Kate Smart's role
-    "squirrels",          # "The Squirrels Nursery" is the formal nursery name
+    "head of nursery",  # Mrs Kate Smart's role
+    "squirrels",  # "The Squirrels Nursery" is the formal nursery name
     # Reception & Pre-Prep department (boys and girls from 4–7)
     # Four classes per year in Reception, Year 1 and Year 2
     "reception teacher",
     "year 1 teacher",
     "year 2 teacher",
-    "pre-prep",           # Pre-Prep = Reception + Years 1-2 department name
+    "pre-prep",  # Pre-Prep = Reception + Years 1-2 department name
     # Prep department (girls from 7+, Years 3–6)
     # 2-3 forms per year; specialist subjects; girls only from Year 3
     "year 3 teacher",
     "year 4 teacher",
     "year 5 teacher",
     "year 6 teacher",
-    "prep teacher",       # "prep teachers", "who are the prep teachers"
+    "prep teacher",  # "prep teachers", "who are the prep teachers"
     # Senior Leadership Team roles (from the school structure page)
     "headmistress",
     "head teacher",
@@ -126,10 +129,10 @@ _STAFF_KW = (
     "leadership team",
     "senior leadership",
     "who runs",
-    "director of studies",   # Mrs Julie Johnson's role
-    "director of sport",     # Miss Katie Clark's role
-    "head of pre-prep",      # Mrs Gill Smeeton's role
-    "head of prep",          # Mrs Deborah Ward's role
+    "director of studies",  # Mrs Julie Johnson's role
+    "director of sport",  # Miss Katie Clark's role
+    "head of pre-prep",  # Mrs Gill Smeeton's role
+    "head of prep",  # Mrs Deborah Ward's role
 )
 
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
@@ -461,18 +464,14 @@ async def retrieve(query: str) -> list[dict]:
             except Exception:
                 sl_supp = []
             stafflist_chunks = [
-                c
-                for c in sl_supp
-                if "staff-list" in c["source"].lower()
+                c for c in sl_supp if "staff-list" in c["source"].lower()
             ]
             # De-duplicate: ensure these chunks are in raw (for later re-ranking of
             # any non-staff-list results), but we'll re-pin them to position 0 AFTER
             # the sort so date-ranking doesn't push them down.
             if stafflist_chunks:
                 seen_sl = {c["source"] for c in stafflist_chunks}
-                raw = stafflist_chunks + [
-                    c for c in raw if c["source"] not in seen_sl
-                ]
+                raw = stafflist_chunks + [c for c in raw if c["source"] not in seen_sl]
 
         # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
