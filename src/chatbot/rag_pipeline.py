@@ -186,6 +186,13 @@ _IMPLICIT_LETTER_KW = (
     "fair",
     "summer fair",
     "holiday action",
+    "coming up",
+    "what's coming up",
+    "whats coming up",
+    "should know about",
+    "need to know",
+    "what's on for",
+    "whats on for",
 )
 
 _SYSTEM_PROMPT_TEMPLATE = """\
@@ -563,9 +570,8 @@ async def retrieve(query: str) -> list[dict]:
         # source_type=letter so the most recent letter chunks are always included.
         # We sort by last_modified descending so the newest letter wins.
         # Also triggered implicitly for closure/reminder/upcoming-event queries.
-        _wants_letter = (
-            any(kw in query.lower() for kw in _LETTER_KW)
-            or any(kw in query.lower() for kw in _IMPLICIT_LETTER_KW)
+        _wants_letter = any(kw in query.lower() for kw in _LETTER_KW) or any(
+            kw in query.lower() for kw in _IMPLICIT_LETTER_KW
         )
         if _wants_letter:
             try:

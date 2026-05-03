@@ -70,6 +70,7 @@ REFUSAL_PHRASES = [
     "i cannot answer",
     "i can't answer",
     "i don't have information about that",
+    "i don't have information about",
     "i can only help",
 ]
 
@@ -82,7 +83,6 @@ NO_INFO_PHRASES = [
     "unable to find",
     "not found in",
     "sorry, an error occurred",
-    "please contact the school directly",
 ]
 
 # For these in-scope questions we *expect* "contact school directly" is fine
