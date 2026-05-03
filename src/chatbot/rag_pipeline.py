@@ -155,6 +155,37 @@ _LETTER_KW = (
     "school reminders",
     "what's in the letter",
     "whats in the letter",
+    "what was in",
+    "what's on this week",
+    "whats on this week",
+    "what's happening this week",
+    "whats happening this week",
+    "anything this week",
+    "this week at school",
+    "school news this week",
+)
+
+# These keywords mean the latest letter is almost certainly relevant even if the
+# parent hasn't explicitly said "letter".  We append letter chunks to context but
+# do NOT pin them — the date-ranker handles ordering.
+_IMPLICIT_LETTER_KW = (
+    "school closed",
+    "is school open",
+    "bank holiday",
+    "closure",
+    "closed on",
+    "open on",
+    "reminder",
+    "reminders",
+    "upcoming",
+    "this friday",
+    "next week",
+    "after school",
+    "after-school",
+    "hay fever",
+    "fair",
+    "summer fair",
+    "holiday action",
 )
 
 _SYSTEM_PROMPT_TEMPLATE = """\
@@ -531,7 +562,12 @@ async def retrieve(query: str) -> list[dict]:
         # For weekly letter queries, run a supplemental search filtered to
         # source_type=letter so the most recent letter chunks are always included.
         # We sort by last_modified descending so the newest letter wins.
-        if any(kw in query.lower() for kw in _LETTER_KW):
+        # Also triggered implicitly for closure/reminder/upcoming-event queries.
+        _wants_letter = (
+            any(kw in query.lower() for kw in _LETTER_KW)
+            or any(kw in query.lower() for kw in _IMPLICIT_LETTER_KW)
+        )
+        if _wants_letter:
             try:
                 letter_results = await search_client.search(
                     search_text="weekly letter reminder school closed",
@@ -555,6 +591,8 @@ async def retrieve(query: str) -> list[dict]:
             if letter_chunks:
                 seen_letter = {c["source"] for c in letter_chunks}
                 raw = letter_chunks + [c for c in raw if c["source"] not in seen_letter]
+        else:
+            letter_chunks = []
 
         # For fees queries, strip historical fee archive pages (hiddenarea/) so that
         # the current year's fees in /admissions/fees always take precedence.
@@ -585,6 +623,14 @@ async def retrieve(query: str) -> list[dict]:
     if stafflist_chunks:
         seen_pin = {c["source"] for c in stafflist_chunks}
         raw = stafflist_chunks + [c for c in raw if c["source"] not in seen_pin]
+
+    # Pin explicit letter query chunks at the top AFTER sorting: letter chunks are
+    # pre-ordered by last_modified desc from the search query, so they're already
+    # in the right order — we just need to ensure they're not pushed down by the
+    # general date-ranker (which may see older dates in their content).
+    if letter_chunks and any(kw in query.lower() for kw in _LETTER_KW):
+        seen_lpin = {c["source"] for c in letter_chunks}
+        raw = letter_chunks + [c for c in raw if c["source"] not in seen_lpin]
 
     return raw[:TOP_K]
 
