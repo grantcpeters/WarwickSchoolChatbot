@@ -85,34 +85,51 @@ _TERM_DATE_KW = (
 # ("who are the year 1 teachers") sit far from "staff list" in vector space so
 # the hybrid search surfaces newsletter PDFs instead of the authoritative list.
 _STAFF_KW = (
+    # Generic teacher / staff phrases
     "who is the teacher",
     "who are the teachers",
     "who teaches",
     "form teacher",
     "class teacher",
-    "year 1 teacher",
-    "year 2 teacher",
-    "year 3 teacher",
-    "year 4 teacher",
-    "year 5 teacher",
-    "year 6 teacher",
-    "nursery teacher",
-    "reception teacher",
-    "head teacher",
-    "headteacher",
-    "headmistress",
     "staff list",
     "list of teachers",
     "list of staff",
     "all teachers",
     "all staff",
+    "all the staff",      # "who are all the staff" — "all staff" ≠ "all the staff"
     "who are the staff",
     "member of staff",
     "members of staff",
-    "who runs",
+    # The Squirrels Nursery (boys and girls from 3+)
+    # Three classes, each with an Early Years specialist and qualified teacher
+    "nursery teacher",
+    "head of nursery",    # Mrs Kate Smart's role
+    "squirrels",          # "The Squirrels Nursery" is the formal nursery name
+    # Reception & Pre-Prep department (boys and girls from 4–7)
+    # Four classes per year in Reception, Year 1 and Year 2
+    "reception teacher",
+    "year 1 teacher",
+    "year 2 teacher",
+    "pre-prep",           # Pre-Prep = Reception + Years 1-2 department name
+    # Prep department (girls from 7+, Years 3–6)
+    # 2-3 forms per year; specialist subjects; girls only from Year 3
+    "year 3 teacher",
+    "year 4 teacher",
+    "year 5 teacher",
+    "year 6 teacher",
+    "prep teacher",       # "prep teachers", "who are the prep teachers"
+    # Senior Leadership Team roles (from the school structure page)
+    "headmistress",
+    "head teacher",
+    "headteacher",
+    "deputy head",
     "leadership team",
     "senior leadership",
-    "deputy head",
+    "who runs",
+    "director of studies",   # Mrs Julie Johnson's role
+    "director of sport",     # Miss Katie Clark's role
+    "head of pre-prep",      # Mrs Gill Smeeton's role
+    "head of prep",          # Mrs Deborah Ward's role
 )
 
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary

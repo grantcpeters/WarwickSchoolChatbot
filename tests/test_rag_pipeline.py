@@ -769,3 +769,269 @@ def test_should_crawl_allows_normal_pages():
     assert _should_crawl("https://www.warwickprep.com/about-us")
     assert _should_crawl("https://www.warwickprep.com/openmorning")
     assert _should_crawl("https://www.warwickprep.com/")
+
+
+# ── School structure — staff-list retrieval ───────────────────
+#
+# Warwick Prep has three departments (from /about-us/structure-of-the-school):
+#   1. The Squirrels Nursery  — boys & girls from 3+, 3 classes
+#   2. Reception & Pre-Prep  — boys & girls from 4–7, 4 classes per year
+#                              (Reception, Year 1, Year 2)
+#   3. Prep department       — girls from 7–11, 2-3 classes per year
+#                              (Years 3, 4, 5, 6)
+#
+# For any teacher/staff query the /information/information/staff-list page
+# must surface at position 0 in the retrieved context.  The page is indexed
+# as a single chunk and has no dates, so without the explicit supplemental
+# search + post-sort pinning it loses to newsletter PDFs that contain the
+# same year-group words at high keyword density.
+
+_STAFF_LIST_URL = "https://www.warwickprep.com/information/information/staff-list"
+
+# Realistic staff-list content mirroring the indexed chunk
+_STAFF_LIST_CONTENT = (
+    "Staff List Senior Leadership Team "
+    "Mrs Hellen Dodsworth BA Hons (QTS) NPQH Headmistress "
+    "Mrs Dee Alder BEd Hons NPQSL Deputy Head "
+    "Mrs Julie Johnson BA Hons PGCE COGE Director of Studies Year 6 Form Teacher "
+    "Mrs Gill Smeeton BSc Hons (QTS) Head of Pre-Prep Department "
+    "Mrs Deborah Ward BA Hons PGCE NPQH Head of Prep Department "
+    "Year 1 Form Teacher Mrs Julie Brotherhood Mrs Helen Comerford "
+    "Mrs Hannah Dickson Mrs Jo Feary Mrs Samantha Jones "
+    "Year 2 Form Teacher Mrs Jane Annett Mrs Emma Chan Mrs Angela Darby "
+    "Mrs Jenny Watson Year 2 Co-ordinator Head of RE "
+    "Reception Form Teacher Mrs Emma Burbidge Mrs Hannah Earl "
+    "Miss Ellie Keen Mrs Helen Sykes Reception Co-ordinator "
+    "Year 3 Form Teacher Mrs Laura Griggs Ms Victoria Sarson "
+    "Year 4 Form Teacher Miss Caroline Cheetham Miss Angela Meloy Miss Nicola Murphy "
+    "Year 5 Form Teacher Mrs Karen Charl Mr Richard Morris Mrs Wendy Stone Mrs Lucy Wilkinson "
+    "Year 6 Form Teacher Mrs Caroline Murden Miss Sara Wilby STEAM Co-ordinator "
+    "Head of Nursery Mrs Kate Smart BA Hons PGCE "
+    "Miss Katie Clark BA Hons PGCE Director of Sport WPS "
+    "Miss Alison Griggs BA Hons Director of Music"
+)
+
+
+def _make_staff_search_instance():
+    """
+    Returns a SearchClient mock whose .search() side-effect returns:
+      - the staff-list chunk when the supplemental keyword search fires
+        (detected by the unique substring "staff list form teacher")
+      - a generic irrelevant newsletter PDF otherwise
+    """
+    staff_chunk = make_search_result(
+        content=_STAFF_LIST_CONTENT,
+        source_url=_STAFF_LIST_URL,
+        page_title="Staff List",
+    )
+    irrelevant = make_search_result(
+        content="Newsletter about school activities and events for parents.",
+        source_url="https://www.warwickprep.com/attachments/download.asp?file=844&type=pdf",
+        page_title="Newsletter",
+    )
+
+    def search_side_effect(*args, **kwargs):
+        search_text = kwargs.get("search_text", args[0] if args else "")
+        if "staff list form teacher" in search_text.lower():
+            return AsyncIteratorMock([staff_chunk])
+        return AsyncIteratorMock([irrelevant, irrelevant, irrelevant])
+
+    instance = AsyncMock()
+    instance.__aenter__ = AsyncMock(return_value=instance)
+    instance.__aexit__ = AsyncMock(return_value=False)
+    instance.search.side_effect = search_side_effect
+    return instance
+
+
+# -- Nursery (The Squirrels Nursery, boys & girls from 3+) -----
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    "who teaches nursery",
+    "who are the nursery teachers",
+    "who is the head of nursery",
+    "nursery teacher",
+    "who are the squirrels nursery staff",
+    "who teaches in the squirrels",
+])
+async def test_staff_list_pinned_for_nursery_queries(query):
+    """
+    Nursery queries must surface the staff-list page first.
+    The Squirrels Nursery has three classes; the Head of Nursery is Mrs Kate Smart.
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for nursery query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+# -- Reception & Pre-Prep (boys & girls from 4–7) --------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    # Reception (4 classes, first year of Reception/Pre-Prep)
+    "who are the reception teachers",
+    "who is the reception form teacher",
+    # Year 1 (Pre-Prep, boys and girls)
+    "who are the year 1 teachers",
+    "who are all the year 1 teachers",
+    "year 1 form teacher",
+    "who teaches year 1",
+    # Year 2 (Pre-Prep, boys and girls)
+    "who are the year 2 teachers",
+    "year 2 form teacher",
+    # Pre-Prep department as a whole
+    "who teaches in pre-prep",
+    "pre-prep teachers",
+    "who are the pre-prep staff",
+])
+async def test_staff_list_pinned_for_pre_prep_queries(query):
+    """
+    Reception and Pre-Prep queries (Years 1-2, boys & girls, 4 classes per year)
+    must surface the staff-list page first.
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for Pre-Prep query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+# -- Prep department (girls from 7–11, Years 3–6) --------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    # Year 3 (first Prep year, supported by full-time TA)
+    "who are the year 3 teachers",
+    "year 3 form teacher",
+    # Year 4
+    "who are the year 4 teachers",
+    "year 4 form teacher",
+    # Year 5 (Maths taught in ability groups from Y5)
+    "who are the year 5 teachers",
+    "year 5 form teacher",
+    # Year 6 (oldest year group)
+    "who are the year 6 teachers",
+    "year 6 form teacher",
+    # Prep department as a whole
+    "who teaches in the prep department",
+    "who are the prep teachers",
+])
+async def test_staff_list_pinned_for_prep_queries(query):
+    """
+    Prep department queries (Years 3-6, girls only, 2-3 classes per year) must
+    surface the staff-list page first.
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for Prep query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+# -- Senior Leadership Team queries ----------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    # Headmistress — Mrs Hellen Dodsworth
+    "who is the headmistress",
+    "who is the head teacher",
+    "who is the headteacher",
+    # Deputy Head — Mrs Dee Alder
+    "who is the deputy head",
+    # Director of Studies — Mrs Julie Johnson
+    "who is the director of studies",
+    # Director of Sport — Miss Katie Clark
+    "who is the director of sport",
+    # Head of Pre-Prep — Mrs Gill Smeeton
+    "who is the head of pre-prep",
+    # Head of Prep — Mrs Deborah Ward
+    "who is the head of prep",
+    # Leadership team as a whole
+    "who is in the senior leadership team",
+    "who runs the school",
+    "senior leadership team",
+])
+async def test_staff_list_pinned_for_leadership_queries(query):
+    """
+    Queries about leadership roles defined in the school structure must surface
+    the staff-list page first (all five SLT members are listed there).
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for leadership query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+# -- Whole-school staff queries --------------------------------
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("query", [
+    "list all teachers at warwick prep",
+    "staff list",
+    "who are all the staff",
+    "list of teachers",
+    "all members of staff",
+    "form teacher",
+    "who are the form teachers",
+])
+async def test_staff_list_pinned_for_whole_school_queries(query):
+    """Whole-school staff queries must surface the staff-list page first."""
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for whole-school query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
