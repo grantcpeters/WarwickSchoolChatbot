@@ -80,6 +80,41 @@ _TERM_DATE_KW = (
     "goes back",
 )
 
+# Queries about staff / teachers — triggers supplemental search that pins the
+# /information/information/staff-list page into context.  Teacher name queries
+# ("who are the year 1 teachers") sit far from "staff list" in vector space so
+# the hybrid search surfaces newsletter PDFs instead of the authoritative list.
+_STAFF_KW = (
+    "who is the teacher",
+    "who are the teachers",
+    "who teaches",
+    "form teacher",
+    "class teacher",
+    "year 1 teacher",
+    "year 2 teacher",
+    "year 3 teacher",
+    "year 4 teacher",
+    "year 5 teacher",
+    "year 6 teacher",
+    "nursery teacher",
+    "reception teacher",
+    "head teacher",
+    "headteacher",
+    "headmistress",
+    "staff list",
+    "list of teachers",
+    "list of staff",
+    "all teachers",
+    "all staff",
+    "who are the staff",
+    "member of staff",
+    "members of staff",
+    "who runs",
+    "leadership team",
+    "senior leadership",
+    "deputy head",
+)
+
 # Queries about food/lunch — triggers supplemental search using menu-PDF vocabulary
 # so the weekly PDF menus surface even though they don't match "what's for lunch" well.
 _MENU_KW = ("lunch", "menu", "food today", "catering", "eat today", "dinner")
@@ -290,6 +325,8 @@ async def retrieve(query: str) -> list[dict]:
                 async for r in results
             ]
 
+    stafflist_chunks: list[dict] = []
+
     async with _get_search() as search_client:
         vector_query = VectorizedQuery(
             vector=vector,
@@ -379,6 +416,47 @@ async def retrieve(query: str) -> list[dict]:
                     c for c in raw if c["source"] not in seen_term
                 ]
 
+        # For staff/teacher queries, run a keyword-only supplemental search that pins
+        # the /information/information/staff-list page.  Same rationale as the term
+        # dates fix — keyword-only avoids the original query vector dragging results
+        # away from the staff list.
+        # NOTE: stafflist_chunks is declared at function scope so it survives outside
+        # the async with block, where it is re-pinned AFTER sorting (the staff-list
+        # page has no dates so date-ranking would push it to the bottom).
+        is_staff_query = any(kw in query.lower() for kw in _STAFF_KW)
+        if is_staff_query:
+            try:
+                sl_text_results = await search_client.search(
+                    search_text="staff list form teacher year headmistress deputy head",
+                    top=5,
+                    select=select_fields,
+                )
+                sl_supp = [
+                    {
+                        "content": r["content"],
+                        "source": r["source_url"],
+                        "type": r["source_type"],
+                        "title": r.get("page_title") or "",
+                        "last_modified": r.get("last_modified"),
+                    }
+                    async for r in sl_text_results
+                ]
+            except Exception:
+                sl_supp = []
+            stafflist_chunks = [
+                c
+                for c in sl_supp
+                if "staff-list" in c["source"].lower()
+            ]
+            # De-duplicate: ensure these chunks are in raw (for later re-ranking of
+            # any non-staff-list results), but we'll re-pin them to position 0 AFTER
+            # the sort so date-ranking doesn't push them down.
+            if stafflist_chunks:
+                seen_sl = {c["source"] for c in stafflist_chunks}
+                raw = stafflist_chunks + [
+                    c for c in raw if c["source"] not in seen_sl
+                ]
+
         # For menu/lunch queries, run a supplemental search using menu-PDF vocabulary.
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
         # "Monday Tuesday Wednesday") that doesn't match "what's for lunch today" well
@@ -432,6 +510,13 @@ async def retrieve(query: str) -> list[dict]:
         return (path_rank, lm_rank, date_rank)
 
     raw.sort(key=_rank_key)
+
+    # Pin staff-list chunks at the top AFTER sorting: the staff-list page has no
+    # dates in its content so date-ranking always places it at the bottom.  When a
+    # staff query was detected we re-pin it here to guarantee it's context slot 0.
+    if stafflist_chunks:
+        seen_pin = {c["source"] for c in stafflist_chunks}
+        raw = stafflist_chunks + [c for c in raw if c["source"] not in seen_pin]
 
     return raw[:TOP_K]
 
