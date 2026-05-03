@@ -3,7 +3,8 @@ name: Weekly Crawl And Index
 on:
   workflow_dispatch:
   schedule:
-    - cron: "0 3 * * 0"
+    # Letters are sent Thursday; ingest Friday at 17:00 UTC (end of school day)
+    - cron: "0 17 * * 5"
 
 permissions:
   contents: read
@@ -35,7 +36,7 @@ jobs:
       RAG_CHUNK_SIZE: ${{ vars.RAG_CHUNK_SIZE }}
       RAG_CHUNK_OVERLAP: ${{ vars.RAG_CHUNK_OVERLAP }}
       LETTER_EMAIL: ${{ secrets.LETTER_EMAIL }}
-      LETTER_PASSWORD: ${{ secrets.LETTER_PASSWORD }}
+      LETTER_OAUTH_REFRESH_TOKEN: ${{ secrets.LETTER_OAUTH_REFRESH_TOKEN }}
 
     steps:
       - name: Check out repository
@@ -55,6 +56,15 @@ jobs:
           client-id: ${{ secrets.AZURE_CLIENT_ID }}
           tenant-id: ${{ secrets.AZURE_TENANT_ID }}
           subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ingest weekly letters
+        # Skips gracefully if OAuth credentials are not configured
+        run: |
+          if [ -n "$LETTER_EMAIL" ] && [ -n "$LETTER_OAUTH_REFRESH_TOKEN" ]; then
+            python -m scripts.ingest_letters
+          else
+            echo "LETTER_EMAIL / LETTER_OAUTH_REFRESH_TOKEN not set — skipping letter ingest."
+          fi
 
       - name: Run incremental crawler
         run: python src/crawler/run_crawler.py
@@ -90,11 +100,3 @@ jobs:
       - name: Run incremental indexer
         run: python src/indexer/run_indexer.py
 
-      - name: Ingest weekly letters
-        # Skips gracefully if LETTER_EMAIL / LETTER_PASSWORD are not configured
-        run: |
-          if [ -n "$LETTER_EMAIL" ] && [ -n "$LETTER_PASSWORD" ]; then
-            python scripts/ingest_letters.py
-          else
-            echo "LETTER_EMAIL / LETTER_PASSWORD not set — skipping letter ingest."
-          fi
