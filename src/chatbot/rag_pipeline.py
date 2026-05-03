@@ -61,7 +61,7 @@ _FEES_KW = (
 _TERM_DATE_KW = (
     "summer holiday",
     "summer holidays",
-    "summer vacation",   # US/informal phrasing for summer break
+    "summer vacation",  # US/informal phrasing for summer break
     "half term",
     "half-term",
     "christmas holiday",
@@ -97,7 +97,7 @@ _STAFF_KW = (
     "list of staff",
     "list the teachers",  # "list the teachers", "list all the teachers"
     "all teachers",
-    "all the teachers",   # "list all the teachers" — "all teachers" ≠ "all the teachers"
+    "all the teachers",  # "list all the teachers" — "all teachers" ≠ "all the teachers"
     "all staff",
     "all the staff",  # "who are all the staff" — "all staff" ≠ "all the staff"
     "who are the staff",
@@ -139,6 +139,24 @@ _STAFF_KW = (
 # so the weekly PDF menus surface even though they don't match "what's for lunch" well.
 _MENU_KW = ("lunch", "menu", "food today", "catering", "eat today", "dinner")
 
+# Queries about the weekly parent letter — triggers a supplemental search filtered to
+# source_type=letter so the most recent indexed letter surfaces reliably.
+_LETTER_KW = (
+    "weekly letter",
+    "parent letter",
+    "school letter",
+    "this week's letter",
+    "this weeks letter",
+    "what did the school say",
+    "latest letter",
+    "letter from school",
+    "letter from warwick",
+    "school reminder",
+    "school reminders",
+    "what's in the letter",
+    "whats in the letter",
+)
+
 _SYSTEM_PROMPT_TEMPLATE = """\
 You are an information assistant exclusively for Warwick Prep School.
 Your sole purpose is to help parents, pupils, and visitors find information about the school.
@@ -169,6 +187,12 @@ When answering a lunch/menu question, find the menu whose "weeks commencing" dat
 the current Monday (i.e. the Monday of today's week) — that is the CURRENT week's menu. \
 Show that menu as the primary answer. Only mention a future week's menu as "coming up next \
 week" if it adds useful context. Do NOT present a future week as the current one.
+
+WEEKLY LETTERS: The context may contain items from parent letters sent by the school. \
+These are labelled "[Weekly Letter - YYYY-MM-DD - Year Groups]". \
+Always use the MOST RECENT letter date when answering questions about current reminders, \
+closures, or upcoming events. If a letter item mentions a date that has already passed, \
+say so clearly. Never present an old letter item as current news.
 
 Today's date is {today}.
 If any information in the context refers to specific dates or events (such as open mornings, \
@@ -503,6 +527,34 @@ async def retrieve(query: str) -> list[dict]:
                     for c in raw
                     if c["source"] not in {c2["source"] for c2 in menu_chunks}
                 ]
+
+        # For weekly letter queries, run a supplemental search filtered to
+        # source_type=letter so the most recent letter chunks are always included.
+        # We sort by last_modified descending so the newest letter wins.
+        if any(kw in query.lower() for kw in _LETTER_KW):
+            try:
+                letter_results = await search_client.search(
+                    search_text="weekly letter reminder school closed",
+                    top=5,
+                    select=select_fields,
+                    filter="source_type eq 'letter'",
+                    order_by=["last_modified desc"],
+                )
+                letter_chunks = [
+                    {
+                        "content": r["content"],
+                        "source": r["source_url"],
+                        "type": r["source_type"],
+                        "title": r.get("page_title") or "",
+                        "last_modified": r.get("last_modified"),
+                    }
+                    async for r in letter_results
+                ]
+            except Exception:
+                letter_chunks = []
+            if letter_chunks:
+                seen_letter = {c["source"] for c in letter_chunks}
+                raw = letter_chunks + [c for c in raw if c["source"] not in seen_letter]
 
         # For fees queries, strip historical fee archive pages (hiddenarea/) so that
         # the current year's fees in /admissions/fees always take precedence.

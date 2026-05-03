@@ -3,7 +3,7 @@ name: Weekly Crawl And Index
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 3 * * 0'
+    - cron: "0 3 * * 0"
 
 permissions:
   contents: read
@@ -34,6 +34,8 @@ jobs:
       RAG_TOP_K: ${{ vars.RAG_TOP_K }}
       RAG_CHUNK_SIZE: ${{ vars.RAG_CHUNK_SIZE }}
       RAG_CHUNK_OVERLAP: ${{ vars.RAG_CHUNK_OVERLAP }}
+      LETTER_EMAIL: ${{ secrets.LETTER_EMAIL }}
+      LETTER_PASSWORD: ${{ secrets.LETTER_PASSWORD }}
 
     steps:
       - name: Check out repository
@@ -42,7 +44,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.11'
+          python-version: "3.11"
 
       - name: Install dependencies
         run: python -m pip install -r requirements.txt
@@ -87,3 +89,12 @@ jobs:
 
       - name: Run incremental indexer
         run: python src/indexer/run_indexer.py
+
+      - name: Ingest weekly letters
+        # Skips gracefully if LETTER_EMAIL / LETTER_PASSWORD are not configured
+        run: |
+          if [ -n "$LETTER_EMAIL" ] && [ -n "$LETTER_PASSWORD" ]; then
+            python scripts/ingest_letters.py
+          else
+            echo "LETTER_EMAIL / LETTER_PASSWORD not set — skipping letter ingest."
+          fi
