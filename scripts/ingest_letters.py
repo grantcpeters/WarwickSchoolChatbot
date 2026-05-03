@@ -301,7 +301,10 @@ def _graph_patch(path: str, token: str, body: dict) -> None:
     """Make a PATCH request to Microsoft Graph (e.g. to mark message as read)."""
     resp = requests.patch(
         f"{_GRAPH_BASE}{path}",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+        headers={
+            "Authorization": f"Bearer {token}",
+            "Content-Type": "application/json",
+        },
         json=body,
         timeout=30,
     )
@@ -311,7 +314,9 @@ def _graph_patch(path: str, token: str, body: dict) -> None:
 def _get_message_body(message_id: str, token: str) -> str:
     """Fetch the full MIME source of a message and extract text."""
     # Get the message with body content
-    data = _graph_get(f"/me/messages/{message_id}", token, params={"$select": "body,bodyPreview"})
+    data = _graph_get(
+        f"/me/messages/{message_id}", token, params={"$select": "body,bodyPreview"}
+    )
     body = data.get("body", {})
     content_type = body.get("contentType", "text")
     content = body.get("content", "")
@@ -372,10 +377,7 @@ def fetch_and_index_letters() -> int:
             continue
 
         # Filter by sender domain
-        if (
-            LETTER_FROM_FILTER
-            and LETTER_FROM_FILTER.lower() not in from_addr.lower()
-        ):
+        if LETTER_FROM_FILTER and LETTER_FROM_FILTER.lower() not in from_addr.lower():
             log.debug("Skipping (sender mismatch): %s", from_addr)
             continue
 
@@ -405,9 +407,7 @@ def fetch_and_index_letters() -> int:
             continue
 
         source_url = _make_source_url(parsed["date_iso"], parsed["year_groups"])
-        page_title = (
-            f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
-        )
+        page_title = f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
         chunks = _make_chunks(parsed)
         log.info(
             "  Parsed %d item(s) from letter dated %s (%s)",

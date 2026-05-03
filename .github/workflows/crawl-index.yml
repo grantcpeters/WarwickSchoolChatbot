@@ -99,4 +99,3 @@ jobs:
 
       - name: Run incremental indexer
         run: python src/indexer/run_indexer.py
-

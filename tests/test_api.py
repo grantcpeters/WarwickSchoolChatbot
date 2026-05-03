@@ -1,4 +1,5 @@
 """Tests for the FastAPI chat endpoint."""
+
 import pytest
 from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
@@ -7,10 +8,12 @@ from unittest.mock import patch, AsyncMock
 @pytest.fixture
 def client():
     from src.api.main import app
+
     return TestClient(app)
 
 
 # ── Health ────────────────────────────────────────────────────
+
 
 def test_health(client):
     resp = client.get("/health")
@@ -26,6 +29,7 @@ def test_health_response_structure(client):
 
 
 # ── Input validation ──────────────────────────────────────────
+
 
 def test_chat_empty_message(client):
     resp = client.post("/chat", json={"message": "", "history": []})
@@ -58,11 +62,14 @@ def test_chat_missing_message_field(client):
 
 
 def test_chat_invalid_json(client):
-    resp = client.post("/chat", data="not-json", headers={"Content-Type": "application/json"})
+    resp = client.post(
+        "/chat", data="not-json", headers={"Content-Type": "application/json"}
+    )
     assert resp.status_code == 422
 
 
 # ── Streaming response ────────────────────────────────────────
+
 
 def test_chat_returns_stream(client):
     async def mock_chat(query, history):
@@ -81,7 +88,9 @@ def test_chat_streams_all_tokens(client):
             yield word
 
     with patch("src.api.main.chat", side_effect=mock_chat):
-        resp = client.post("/chat", json={"message": "Tell me about the school", "history": []})
+        resp = client.post(
+            "/chat", json={"message": "Tell me about the school", "history": []}
+        )
         assert resp.status_code == 200
         assert "Warwick Prep School" in resp.text
 
@@ -102,7 +111,10 @@ def test_chat_passes_history_to_pipeline(client):
         received_history.extend(history)
         yield "ok"
 
-    history = [{"role": "user", "content": "previous question"}, {"role": "assistant", "content": "previous answer"}]
+    history = [
+        {"role": "user", "content": "previous question"},
+        {"role": "assistant", "content": "previous answer"},
+    ]
     with patch("src.api.main.chat", side_effect=mock_chat):
         client.post("/chat", json={"message": "follow-up", "history": history})
 
@@ -121,6 +133,7 @@ def test_chat_empty_history_is_valid(client):
 
 # ── Error handling ────────────────────────────────────────────
 
+
 def test_chat_error_does_not_expose_traceback(client):
     async def mock_chat(query, history):
         raise RuntimeError("Internal connection failure with secret_key=abc123")
@@ -137,20 +150,27 @@ def test_chat_error_does_not_expose_traceback(client):
 
 # ── Feedback endpoint ─────────────────────────────────────────
 
+
 def test_feedback_thumbs_up_accepted(client):
-    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi there", "rating": 1})
+    resp = client.post(
+        "/feedback", json={"message": "Hello", "response": "Hi there", "rating": 1}
+    )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
 
 def test_feedback_thumbs_down_accepted(client):
-    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi there", "rating": -1})
+    resp = client.post(
+        "/feedback", json={"message": "Hello", "response": "Hi there", "rating": -1}
+    )
     assert resp.status_code == 200
     assert resp.json()["ok"] is True
 
 
 def test_feedback_invalid_rating_rejected(client):
-    resp = client.post("/feedback", json={"message": "Hello", "response": "Hi", "rating": 0})
+    resp = client.post(
+        "/feedback", json={"message": "Hello", "response": "Hi", "rating": 0}
+    )
     assert resp.status_code == 400
 
 

@@ -1035,8 +1035,8 @@ async def test_staff_list_pinned_for_leadership_queries(query):
         "all members of staff",
         "form teacher",
         "who are the form teachers",
-        "list the teachers",                   # real user query from eval run
-        "list all the teachers",               # "all the teachers" ≠ "all teachers"
+        "list the teachers",  # real user query from eval run
+        "list all the teachers",  # "all the teachers" ≠ "all teachers"
         "list all the teachers in warwick prep",  # real user query that failed eval
     ],
 )
@@ -1107,20 +1107,23 @@ def _make_termdates_search_instance():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("query", [
-    # Phrases explicitly in _TERM_DATE_KW
-    "when are the summer holidays",
-    "when is the summer holiday",
-    "when is the christmas holiday",
-    "when are the easter holidays",
-    "what date is half term",
-    "when does school break up",
-    "when does term end",
-    "when does school go back",
-    # "summer vacation" — US/informal phrasing added after real eval failure
-    "when is the summer vacation",
-    "when are the summer vacations",
-])
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Phrases explicitly in _TERM_DATE_KW
+        "when are the summer holidays",
+        "when is the summer holiday",
+        "when is the christmas holiday",
+        "when are the easter holidays",
+        "what date is half term",
+        "when does school break up",
+        "when does term end",
+        "when does school go back",
+        # "summer vacation" — US/informal phrasing added after real eval failure
+        "when is the summer vacation",
+        "when are the summer vacations",
+    ],
+)
 async def test_termdates_page_pinned_for_holiday_queries(query):
     """
     Holiday phrasing queries must surface the term-dates page at position 0

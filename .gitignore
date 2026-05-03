@@ -1,8 +1,14 @@
 # General
 .DS_Store
 .env
-.vscode/
 *.log
+
+# VS Code — allow shared project config, ignore personal/local-only files
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+!.vscode/launch.json
+!.vscode/tasks.json
 *.tmp
 
 # Python
@@ -85,3 +91,27 @@ src/api/static/
 # OS
 Thumbs.db
 desktop.ini
+
+# Deployment package (built during CI)
+.deploy/
+
+# Local dev environment configs
+.devbox/
+
+# Azure App Service logs (downloaded for debugging)
+webapp_logs/
+webapp_logs.zip
+
+# Generated crawl stats (workflow step summary)
+crawl-stats.json
+
+# Evaluation output
+scripts/eval_results.json
+scripts/q11_out.txt
+
+# Temporary / one-off debug scripts (prefixed with _)
+scripts/_*.py
+
+# One-off root-level fix scripts (already applied)
+fix_encoding.py
+fix_prompts.py

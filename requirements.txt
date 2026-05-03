@@ -29,6 +29,9 @@ openai==1.30.1
 tiktoken==0.7.0
 langchain-text-splitters==0.2.0
 
+# OAuth2 (used by scripts/ingest_letters.py for Outlook.com IMAP)
+msal==1.28.0
+
 # Rate limiting
 slowapi>=0.1.9
 
