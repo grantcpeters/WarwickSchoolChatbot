@@ -328,6 +328,16 @@ def test_system_prompt_warns_about_past_events():
     assert "out of date" in prompt.lower() or "passed" in prompt.lower()
 
 
+def test_system_prompt_requires_term_date_total_calculation():
+    from src.chatbot.rag_pipeline import _build_system_prompt
+
+    prompt = _build_system_prompt().lower()
+    assert "holiday" in prompt
+    assert "calculate" in prompt
+    assert "total" in prompt
+    assert "breakdown" in prompt
+
+
 # ── chat() ────────────────────────────────────────────────────
 
 
@@ -1144,3 +1154,96 @@ async def test_termdates_page_pinned_for_holiday_queries(query):
             f"Termdates page not at position 0 for holiday query {query!r}. "
             f"Got: {results[0]['source']}"
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        "how many days holiday are there for the year 2025-2026",
+        "how many weeks holiday are there for the year 2025-2026",
+        "how many holiday days are there in 2025-2026",
+        "how many holiday weeks are there in the academic year 2025-2026",
+        "what is the total number of holiday days for 2025-2026",
+        "what is the total number of holiday weeks for 2025-2026",
+    ],
+)
+async def test_termdates_page_pinned_for_holiday_total_queries(query):
+    """
+    Total-holiday phrasing must also surface the term-dates page first.
+    These queries failed in live usage because they mention holidays without
+    using the existing colloquial phrases like "summer holidays" or "half term".
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_termdates_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _TERMDATES_URL, (
+            f"Termdates page not at position 0 for holiday-total query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+# ── Real-world prompt regression tests ───────────────────────
+#
+# These queries were seen in live usage (Log Analytics, 48-hour window, May 2026)
+# and were verified correct by the eval_live_prompts.py run.  They pin the
+# expected retrieval source so that future pipeline changes can't silently
+# break them.
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "query",
+    [
+        # Real queries seen in live usage
+        "list the year 1 teachers",
+        "who are the year 2 teachers",
+        "who are year 3 teachers",
+        "list the nursery teachers",
+        "who are the teachers in nursery",
+        "tell me more about the nursery teachers",
+    ],
+)
+async def test_staff_list_pinned_for_real_world_teacher_queries(query):
+    """
+    Real-world teacher queries from live usage must surface the staff-list page.
+    Verified correct in live eval run (May 2026).
+    """
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = _make_staff_search_instance()
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve(query)
+
+        assert len(results) > 0, f"No results for query: {query!r}"
+        assert results[0]["source"] == _STAFF_LIST_URL, (
+            f"Staff list not at position 0 for real-world query {query!r}. "
+            f"Got: {results[0]['source']}"
+        )
+
+
+def test_system_prompt_requires_term_date_total_calculation():
+    """
+    System prompt must instruct the LLM to calculate holiday totals from
+    term-date ranges rather than saying it has no information.
+    Added after live usage showed holiday-total queries returning no info.
+    """
+    from src.chatbot.rag_pipeline import _build_system_prompt
+
+    prompt = _build_system_prompt()
+    assert "holiday" in prompt.lower()
+    assert "calculate" in prompt.lower()
+    assert "total" in prompt.lower()
+    assert "breakdown" in prompt.lower()

@@ -79,6 +79,12 @@ _TERM_DATE_KW = (
     "start of term",
     "breaks up",
     "goes back",
+    "holiday days",
+    "holiday weeks",
+    "days holiday",
+    "weeks holiday",
+    "total holiday",
+    "total number of holiday",
 )
 
 # Queries about staff / teachers — triggers supplemental search that pins the
@@ -231,6 +237,12 @@ These are labelled "[Weekly Letter - YYYY-MM-DD - Year Groups]". \
 Always use the MOST RECENT letter date when answering questions about current reminders, \
 closures, or upcoming events. If a letter item mentions a date that has already passed, \
 say so clearly. Never present an old letter item as current news.
+
+TERM DATES AND HOLIDAY TOTALS: When the context contains the academic year's term dates and \
+holiday or half-term ranges, and the user asks for the total number of holiday days or weeks, \
+calculate the total from those ranges. Show a short breakdown by break, then give the final \
+total. If the full academic year is not present in the context, say you do not have enough \
+information to calculate a reliable total.
 
 Today's date is {today}.
 If any information in the context refers to specific dates or events (such as open mornings, \

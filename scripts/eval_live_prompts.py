@@ -91,6 +91,10 @@ EXPECTED_NO_INFO = [
     "who are all the year 1 teachers",
     "what's the school policy on social media",
     "what is the policy on authorised leave",
+    # "NWS" is not a Warwick Prep entity — bot correctly says no info
+    "nws students",
+    # Warwick Prep is a prep school (ages 3–11, up to Year 6); Year 9 does not exist
+    "year 9",
 ]
 
 
