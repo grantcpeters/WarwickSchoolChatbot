@@ -420,6 +420,7 @@ async def retrieve(query: str) -> list[dict]:
             ]
 
     stafflist_chunks: list[dict] = []
+    termdates_chunks: list[dict] = []
 
     async with _get_search() as search_client:
         vector_query = VectorizedQuery(
@@ -504,6 +505,9 @@ async def retrieve(query: str) -> list[dict]:
                 if "termdates" in c["source"].lower()
                 or "term-dates" in c["source"].lower()
             ]
+            # De-duplicate into raw, but do NOT pin here — re-pin AFTER sort
+            # (same pattern as stafflist_chunks) so the date-ranker doesn't push
+            # the termdates page below the more-recently-modified letters.
             if termdates_chunks:
                 seen_term = {c["source"] for c in termdates_chunks}
                 raw = termdates_chunks + [
@@ -641,6 +645,14 @@ async def retrieve(query: str) -> list[dict]:
     if stafflist_chunks:
         seen_pin = {c["source"] for c in stafflist_chunks}
         raw = stafflist_chunks + [c for c in raw if c["source"] not in seen_pin]
+
+    # Pin termdates chunks at the top AFTER sorting: the termdates page has no
+    # last_modified value so the date-ranker places it below the more-recently-
+    # modified letters.  Re-pinning here guarantees context slot 0 for holiday
+    # and term-date queries.
+    if termdates_chunks:
+        seen_tdpin = {c["source"] for c in termdates_chunks}
+        raw = termdates_chunks + [c for c in raw if c["source"] not in seen_tdpin]
 
     # Pin explicit letter query chunks at the top AFTER sorting: letter chunks are
     # pre-ordered by last_modified desc from the search query, so they're already
