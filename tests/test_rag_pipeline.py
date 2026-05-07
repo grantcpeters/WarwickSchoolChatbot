@@ -338,6 +338,19 @@ def test_system_prompt_requires_term_date_total_calculation():
     assert "breakdown" in prompt
 
 
+def test_system_prompt_absence_directs_to_correct_email():
+    from src.chatbot.rag_pipeline import _build_system_prompt
+
+    prompt = _build_system_prompt()
+    # Must direct absence queries to the parent comms address
+    assert "wps-parents@warwickschools.co.uk" in prompt
+    # The absence section must explicitly say NOT to use admissions@
+    assert "Do NOT direct absence queries to admissions@warwickprep.com" in prompt
+    # Must mention key policy facts
+    assert "exceptional circumstances" in prompt.lower()
+    assert "five days" in prompt.lower()
+
+
 # ── chat() ────────────────────────────────────────────────────
 
 
