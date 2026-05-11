@@ -142,6 +142,120 @@ _SKIP_LINES = {
     "reminders and information",
 }
 
+# ── Fallback (newsletter / prose) parser helpers ──────────────
+
+# Invisible / zero-width characters common in HTML newsletters and PDF extracts
+_INVISIBLE_RE = re.compile(
+    r"[\u00ad\u2007\u200b\u200c\u200d\u034f\ufeff\u2060]+"
+)
+
+# Forwarded-email header lines (From: / Sent: / To: / Subject: etc.)
+_FWD_HEADER_RE = re.compile(
+    r"^(From|Sent|To|Cc|Bcc|Subject|Date)\s*:", re.IGNORECASE
+)
+
+# Target size (chars) for each newsletter chunk
+_NEWSLETTER_CHUNK_SIZE = 800
+
+
+def _clean_text(text: str) -> str:
+    """Strip invisible/zero-width chars and collapse runs of whitespace."""
+    text = _INVISIBLE_RE.sub("", text)
+    text = re.sub(r"  +", " ", text)
+    return text
+
+
+def _parse_newsletter(text: str, subject: str) -> dict | None:
+    """Fallback parser for newsletter / prose / attachment-only letter formats.
+
+    Works when the structured ``_parse_letter`` parser fails (i.e. there is no
+    year-group header or ``Category: text`` items).  Chunks the content into
+    fixed-size segments so every part is searchable.
+
+    Returns the same dict shape as ``_parse_letter`` (date, date_iso,
+    year_groups, items) with an extra ``source_label`` key, or None if no date
+    can be found or there is no usable content.
+    """
+    text = _clean_text(text)
+    lines = [l.strip() for l in text.splitlines() if l.strip()]
+
+    # Drop forwarded-email header block at the top of the message
+    i = 0
+    while i < len(lines) and _FWD_HEADER_RE.match(lines[i]):
+        i += 1
+    lines = lines[i:]
+
+    # Find the first date line
+    date: datetime | None = None
+    date_idx = -1
+    for idx, line in enumerate(lines):
+        m = _DATE_RE.search(line)
+        if m:
+            date = datetime(
+                int(m.group(3)),
+                _MONTH_MAP[m.group(2).lower()],
+                int(m.group(1)),
+                tzinfo=timezone.utc,
+            )
+            date_idx = idx
+            break
+
+    if date is None:
+        log.debug("Newsletter parse failed — no date found in: %s", subject)
+        return None
+
+    # Collect body lines after the date, stopping at the sign-off / footer
+    body_lines: list[str] = []
+    for line in lines[date_idx + 1 :]:
+        lower = line.lower()
+        # Stop at sign-off
+        if any(lower.startswith(p) for p in _STOP_PHRASES):
+            break
+        # Skip salutation variants (PDF extraction adds extra spaces)
+        normalised = re.sub(r"\s+", " ", lower).strip()
+        if normalised in _SKIP_LINES:
+            continue
+        body_lines.append(line)
+
+    if not body_lines:
+        log.debug("Newsletter parse failed — no body content after date: %s", subject)
+        return None
+
+    # Chunk into ~_NEWSLETTER_CHUNK_SIZE char segments
+    items: list[tuple[str, str]] = []
+    current: list[str] = []
+    current_len = 0
+
+    def _flush_chunk() -> None:
+        if current:
+            chunk_text = " ".join(current)
+            items.append((f"Section {len(items) + 1}", chunk_text))
+            current.clear()
+
+    for line in body_lines:
+        current.append(line)
+        current_len += len(line) + 1
+        if current_len >= _NEWSLETTER_CHUNK_SIZE:
+            _flush_chunk()
+            current_len = 0
+
+    _flush_chunk()
+
+    if not items:
+        return None
+
+    # Strip Fw:/FW:/RE: prefix from subject to get a clean label
+    label = re.sub(r"^(fw|fwd|re)\s*:\s*", "", subject, flags=re.IGNORECASE).strip()
+
+    return {
+        "date": date,
+        "date_iso": date.strftime("%Y-%m-%d"),
+        "year_groups": label,
+        "items": items,
+        "source_label": label,
+        "source_type": "newsletter",
+    }
+
 
 def _extract_text(msg) -> str:
     """Return the best plain-text representation of an email message."""
@@ -269,7 +383,12 @@ def _make_source_url(date_iso: str, year_groups: str) -> str:
 
 def _make_chunks(parsed: dict) -> list[str]:
     """One chunk per letter item, each prefixed with letter context."""
-    prefix = f"[Weekly Letter - {parsed['date_iso']} - {parsed['year_groups']}]"
+    if "source_label" in parsed:
+        # Newsletter / prose format — label comes from the email subject
+        prefix = f"[{parsed['source_label']} - {parsed['date_iso']}]"
+    else:
+        # Structured weekly letter format
+        prefix = f"[Weekly Letter - {parsed['date_iso']} - {parsed['year_groups']}]"
     return [f"{prefix} {category}: {text}" for category, text in parsed["items"]]
 
 
@@ -449,6 +568,12 @@ def fetch_and_index_letters() -> int:
         parsed = _parse_letter(text)
 
         if not parsed:
+            log.info(
+                "Structured parse failed for: %s — trying newsletter parser", subject
+            )
+            parsed = _parse_newsletter(text, subject)
+
+        if not parsed:
             log.warning(
                 "Could not parse letter body for: %s — marking read and skipping",
                 subject,
@@ -457,7 +582,8 @@ def fetch_and_index_letters() -> int:
             continue
 
         source_url = _make_source_url(parsed["date_iso"], parsed["year_groups"])
-        page_title = f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
+        label = parsed.get("source_label", f"{parsed['year_groups']} - {parsed['date_iso']}")
+        page_title = f"{label} - {parsed['date_iso']}" if "source_label" in parsed else f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
         chunks = _make_chunks(parsed)
         log.info(
             "  Parsed %d item(s) from letter dated %s (%s)",
@@ -474,7 +600,7 @@ def fetch_and_index_letters() -> int:
                 "id": make_doc_id(source_url, i),
                 "content": chunk,
                 "source_url": source_url,
-                "source_type": "letter",
+                "source_type": parsed.get("source_type", "letter"),
                 "page_title": page_title,
                 "chunk_index": i,
                 "content_vector": vector,
