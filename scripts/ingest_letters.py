@@ -34,17 +34,20 @@ Azure Blob Storage (_letter_index_state.json) and skips any letter
 it has already processed.
 """
 
+import base64
 import email as email_lib
+import io
 import logging
 import os
 import re
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from email import policy as email_policy
 
 import msal
 import requests
 from bs4 import BeautifulSoup
 from dotenv import load_dotenv
+from PyPDF2 import PdfReader
 
 from src.indexer.run_indexer import (
     embed,
@@ -74,10 +77,13 @@ _OAUTH_AUTHORITY = "https://login.microsoftonline.com/consumers"
 _OAUTH_SCOPES = ["https://graph.microsoft.com/Mail.ReadWrite"]
 LETTER_OAUTH_REFRESH_TOKEN = os.getenv("LETTER_OAUTH_REFRESH_TOKEN")
 _GRAPH_BASE = "https://graph.microsoft.com/v1.0"
-# Only process emails whose subject contains this string (case-insensitive)
-LETTER_SUBJECT_FILTER = os.getenv("LETTER_SUBJECT_FILTER", "Weekly Letter")
-# Only process emails whose From address contains this domain (leave empty to skip check)
-LETTER_FROM_FILTER = os.getenv("LETTER_FROM_FILTER", "")
+# Optional subject keyword filter — leave empty (default) to accept all subjects.
+# The sender filter below is the primary gate, so subject filtering is not needed.
+# Override via LETTER_SUBJECT_FILTER env var if you want to restrict by subject.
+LETTER_SUBJECT_FILTER = os.getenv("LETTER_SUBJECT_FILTER", "")
+# Only process emails from this sender address (case-insensitive substring match).
+# Defaults to the personal forwarding address; override via LETTER_FROM_FILTER env var.
+LETTER_FROM_FILTER = os.getenv("LETTER_FROM_FILTER", "GrantAndTracy@outlook.com")
 
 LETTER_STATE_BLOB = "_letter_index_state.json"
 CONTAINER_RAW = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "webcrawl-raw")
@@ -297,6 +303,38 @@ def _graph_get(path: str, token: str, params: dict | None = None) -> dict:
     return resp.json()
 
 
+def _extract_pdf_text(content_bytes: bytes) -> str:
+    """Extract plain text from a PDF byte string using PyPDF2."""
+    try:
+        reader = PdfReader(io.BytesIO(content_bytes))
+        pages = [page.extract_text() or "" for page in reader.pages]
+        return "\n".join(pages).strip()
+    except Exception as exc:
+        log.warning("Could not extract PDF text: %s", exc)
+        return ""
+
+
+def _fetch_attachment_text(message_id: str, token: str) -> str:
+    """Fetch all PDF attachments for a message and return their combined text."""
+    data = _graph_get(f"/me/messages/{message_id}/attachments", token)
+    texts: list[str] = []
+    for att in data.get("value", []):
+        name = att.get("name", "")
+        content_type = att.get("contentType", "")
+        content_b64 = att.get("contentBytes", "")
+        if not content_b64:
+            continue
+        if "pdf" in content_type.lower() or name.lower().endswith(".pdf"):
+            raw = base64.b64decode(content_b64)
+            pdf_text = _extract_pdf_text(raw)
+            if pdf_text:
+                log.info("  Extracted %d chars from attachment: %s", len(pdf_text), name)
+                texts.append(pdf_text)
+        else:
+            log.debug("Skipping non-PDF attachment: %s (%s)", name, content_type)
+    return "\n".join(texts)
+
+
 def _graph_patch(path: str, token: str, body: dict) -> None:
     """Make a PATCH request to Microsoft Graph (e.g. to mark message as read)."""
     resp = requests.patch(
@@ -350,19 +388,25 @@ def fetch_and_index_letters() -> int:
     indexed_count = 0
     access_token = _get_access_token()
 
-    # Query Graph for unread messages; subject filtering happens in Python
+    # Query Graph for messages received in the last 90 days.
+    # We no longer rely on isRead as the primary gate — the state file is the
+    # sole deduplication mechanism, so emails that were previously marked read
+    # (e.g. due to a parse failure) will still be retried.
+    since = (datetime.now(timezone.utc) - timedelta(days=90)).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
     data = _graph_get(
         "/me/messages",
         access_token,
         params={
-            "$filter": "isRead eq false",
-            "$select": "id,subject,from,receivedDateTime,internetMessageId,body",
+            "$filter": f"receivedDateTime ge {since}",
+            "$select": "id,subject,from,receivedDateTime,internetMessageId,body,hasAttachments",
             "$top": "50",
             "$orderby": "receivedDateTime desc",
         },
     )
     messages = data.get("value", [])
-    log.info("Found %d unread message(s) to check", len(messages))
+    log.info("Found %d message(s) in the last 90 days to check", len(messages))
 
     for msg_meta in messages:
         subject = msg_meta.get("subject", "")
@@ -383,8 +427,7 @@ def fetch_and_index_letters() -> int:
 
         # Skip letters already indexed
         if message_id in state:
-            log.info("Already indexed, skipping: %s", subject)
-            _graph_patch(f"/me/messages/{graph_id}", access_token, {"isRead": True})
+            log.debug("Already indexed, skipping: %s", subject)
             continue
 
         log.info("Processing: %s (from %s)", subject, from_addr)
@@ -396,6 +439,13 @@ def fetch_and_index_letters() -> int:
             text = soup.get_text(separator="\n", strip=True)
         else:
             text = content
+
+        # Append any PDF attachment text so the parser can read it too
+        if msg_meta.get("hasAttachments"):
+            attachment_text = _fetch_attachment_text(graph_id, access_token)
+            if attachment_text:
+                text = text + "\n" + attachment_text
+
         parsed = _parse_letter(text)
 
         if not parsed:
