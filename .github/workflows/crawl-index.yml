@@ -3,8 +3,8 @@ name: Weekly Crawl And Index
 on:
   workflow_dispatch:
   schedule:
-    # Letters are sent Thursday; ingest Friday at 17:00 UTC (end of school day)
-    - cron: "0 17 * * 5"
+    # Letters are sent Thursday; ingest Friday at 22:00 UTC
+    - cron: "0 22 * * 5"
 
 permissions:
   contents: read
