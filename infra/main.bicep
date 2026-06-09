@@ -5,7 +5,7 @@ param location string = resourceGroup().location
 param prefix string = 'warwickprep'
 
 @description('Azure OpenAI model deployments')
-param chatModelName string = 'gpt-4o-mini'
+param chatModelName string = 'gpt-4.1-mini'
 param embeddingModelName string = 'text-embedding-3-small'
 @description('Whether to create Azure OpenAI model deployments from this template')
 param deployOpenAiModelDeployments bool = false
@@ -89,7 +89,7 @@ resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-0
     model: {
       format: 'OpenAI'
       name: chatModelName
-      version: '2024-07-18'
+      version: '2025-04-14'
     }
   }
 }
