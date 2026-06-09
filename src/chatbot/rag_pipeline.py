@@ -565,6 +565,7 @@ async def retrieve(query: str) -> list[dict]:
         # Weekly menu PDFs have structured content ("OPTION 1", "week commencing",
         # "Monday Tuesday Wednesday") that doesn't match "what's for lunch today" well
         # in hybrid search — so we need to search for them explicitly.
+        menu_chunks: list[dict] = []
         if any(kw in query.lower() for kw in _MENU_KW):
             menu_vq = VectorizedQuery(
                 vector=vector,
@@ -663,6 +664,14 @@ async def retrieve(query: str) -> list[dict]:
     if termdates_chunks:
         seen_tdpin = {c["source"] for c in termdates_chunks}
         raw = termdates_chunks + [c for c in raw if c["source"] not in seen_tdpin]
+
+    # Pin menu PDF chunks at the top AFTER sorting: the weekly menu PDFs have no
+    # last_modified value so the date-ranker pushes them below Squirrel News
+    # letters that mention the menu in passing.  The PDF is the authoritative
+    # source — re-pin here to guarantee it wins for all menu/lunch queries.
+    if menu_chunks:
+        seen_menupin = {c["source"] for c in menu_chunks}
+        raw = menu_chunks + [c for c in raw if c["source"] not in seen_menupin]
 
     # Pin explicit letter query chunks at the top AFTER sorting: letter chunks are
     # pre-ordered by last_modified desc from the search query, so they're already
