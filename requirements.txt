@@ -1,11 +1,11 @@
 # Core
-fastapi==0.111.0
-gunicorn==22.0.0
-uvicorn[standard]==0.29.0
-pydantic==2.7.1
+fastapi==0.136.3
+gunicorn==26.0.0
+uvicorn[standard]==0.49.0
+pydantic==2.13.4
 pydantic-settings==2.2.1
 python-dotenv==1.0.1
-httpx==0.27.0
+httpx==0.28.1
 
 # Web crawling
 scrapy==2.11.2
@@ -18,24 +18,23 @@ pypdf2==3.0.1
 python-magic==0.4.27
 
 # Azure SDKs
-azure-identity==1.16.0
-azure-storage-blob==12.20.0
-azure-search-documents==11.6.0
+azure-identity==1.25.3
+azure-storage-blob==12.30.0
+azure-search-documents==12.0.0
 aiohttp>=3.9.0
-azure-ai-documentintelligence==1.0.0
-openai==1.30.1
+azure-ai-documentintelligence==1.0.2
+openai==2.41.0
 
 # Text processing / chunking
-tiktoken==0.7.0
+tiktoken==0.13.0
 langchain-text-splitters==0.2.0
 
 # OAuth2 (used by scripts/ingest_letters.py for Outlook.com IMAP)
-msal==1.28.0
+msal==1.37.0
 
 # Rate limiting
 slowapi>=0.1.9
 
 # Testing
-pytest==8.2.0
-pytest-asyncio==0.23.6
-httpx==0.27.0
+pytest==9.0.3
+pytest-asyncio==1.4.0

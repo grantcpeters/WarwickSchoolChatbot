@@ -84,7 +84,7 @@ resource openAiAccount 'Microsoft.CognitiveServices/accounts@2023-05-01' = {
 resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = if (deployOpenAiModelDeployments) {
   parent: openAiAccount
   name: chatModelName
-  sku: { name: 'Standard', capacity: 20 }
+  sku: { name: 'Standard', capacity: 80 }
   properties: {
     model: {
       format: 'OpenAI'
@@ -97,7 +97,7 @@ resource chatDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-0
 resource embeddingDeployment 'Microsoft.CognitiveServices/accounts/deployments@2023-05-01' = if (deployOpenAiModelDeployments) {
   parent: openAiAccount
   name: embeddingModelName
-  sku: { name: 'Standard', capacity: 20 }
+  sku: { name: 'Standard', capacity: 80 }
   properties: {
     model: {
       format: 'OpenAI'
