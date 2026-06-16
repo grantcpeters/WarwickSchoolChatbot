@@ -85,6 +85,15 @@ LETTER_SUBJECT_FILTER = os.getenv("LETTER_SUBJECT_FILTER", "")
 # Defaults to the personal forwarding address; override via LETTER_FROM_FILTER env var.
 LETTER_FROM_FILTER = os.getenv("LETTER_FROM_FILTER", "GrantAndTracy@outlook.com")
 
+# Comma-separated list of subject substrings to always skip (case-insensitive).
+# Use this to block personal/administrative emails that were accidentally forwarded.
+# Example: LETTER_SUBJECT_BLOCKLIST=reception classes,individual pupil report
+LETTER_SUBJECT_BLOCKLIST: list[str] = [
+    s.strip().lower()
+    for s in os.getenv("LETTER_SUBJECT_BLOCKLIST", "").split(",")
+    if s.strip()
+]
+
 LETTER_STATE_BLOB = "_letter_index_state.json"
 CONTAINER_RAW = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "webcrawl-raw")
 
@@ -130,6 +139,14 @@ _STOP_PHRASES = (
     "warwick schools foundation",
 )
 
+# Detects a personal salutation: "Dear Mr Peters", "Dear Ms Wu", etc.
+# A broadcast email says "Dear Parents" or "Dear Parent" — those are acceptable.
+# Pattern: Dear + title (Mr/Mrs/Ms/Miss/Dr) + at least one word (surname)
+_PERSONAL_SALUTATION_RE = re.compile(
+    r"\bDear\s+(Mr|Mrs|Ms|Miss|Dr)\.?\s+[A-Z][a-zA-Z]+",
+    re.IGNORECASE,
+)
+
 # Lines to skip entirely (salutation / section headers)
 _SKIP_LINES = {
     "dear parents",
@@ -145,14 +162,10 @@ _SKIP_LINES = {
 # ── Fallback (newsletter / prose) parser helpers ──────────────
 
 # Invisible / zero-width characters common in HTML newsletters and PDF extracts
-_INVISIBLE_RE = re.compile(
-    r"[\u00ad\u2007\u200b\u200c\u200d\u034f\ufeff\u2060]+"
-)
+_INVISIBLE_RE = re.compile(r"[\u00ad\u2007\u200b\u200c\u200d\u034f\ufeff\u2060]+")
 
 # Forwarded-email header lines (From: / Sent: / To: / Subject: etc.)
-_FWD_HEADER_RE = re.compile(
-    r"^(From|Sent|To|Cc|Bcc|Subject|Date)\s*:", re.IGNORECASE
-)
+_FWD_HEADER_RE = re.compile(r"^(From|Sent|To|Cc|Bcc|Subject|Date)\s*:", re.IGNORECASE)
 
 # Target size (chars) for each newsletter chunk
 _NEWSLETTER_CHUNK_SIZE = 800
@@ -447,7 +460,9 @@ def _fetch_attachment_text(message_id: str, token: str) -> str:
             raw = base64.b64decode(content_b64)
             pdf_text = _extract_pdf_text(raw)
             if pdf_text:
-                log.info("  Extracted %d chars from attachment: %s", len(pdf_text), name)
+                log.info(
+                    "  Extracted %d chars from attachment: %s", len(pdf_text), name
+                )
                 texts.append(pdf_text)
         else:
             log.debug("Skipping non-PDF attachment: %s (%s)", name, content_type)
@@ -534,9 +549,15 @@ def fetch_and_index_letters() -> int:
         graph_id = msg_meta["id"]
         message_id = msg_meta.get("internetMessageId") or graph_id
 
-        # Filter by subject keyword
+        # Filter by subject keyword (allowlist — empty string always passes)
         if LETTER_SUBJECT_FILTER.lower() not in subject.lower():
             log.debug("Skipping (subject mismatch): %s", subject)
+            continue
+
+        # Block explicitly-listed subjects (blocklist)
+        if any(blocked in subject.lower() for blocked in LETTER_SUBJECT_BLOCKLIST):
+            log.info("Skipping (subject blocklisted): %s", subject)
+            state[message_id] = {"skipped": True, "reason": "subject_blocklisted", "subject": subject}
             continue
 
         # Filter by sender domain
@@ -565,6 +586,21 @@ def fetch_and_index_letters() -> int:
             if attachment_text:
                 text = text + "\n" + attachment_text
 
+        # Guard: reject emails with a personal salutation ("Dear Mr Peters",
+        # "Dear Ms Wu" etc.).  School-wide broadcasts always say "Dear Parents"
+        # or "Dear Parent/Carer" — personalised emails are addressed to specific
+        # parents by name and must NOT be indexed into the shared chatbot.
+        if _PERSONAL_SALUTATION_RE.search(text):
+            log.warning(
+                "Skipping personal email (personal salutation detected): %s", subject
+            )
+            state[message_id] = {
+                "skipped": True,
+                "reason": "personal_salutation",
+                "subject": subject,
+            }
+            continue
+
         parsed = _parse_letter(text)
 
         if not parsed:
@@ -582,8 +618,14 @@ def fetch_and_index_letters() -> int:
             continue
 
         source_url = _make_source_url(parsed["date_iso"], parsed["year_groups"])
-        label = parsed.get("source_label", f"{parsed['year_groups']} - {parsed['date_iso']}")
-        page_title = f"{label} - {parsed['date_iso']}" if "source_label" in parsed else f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
+        label = parsed.get(
+            "source_label", f"{parsed['year_groups']} - {parsed['date_iso']}"
+        )
+        page_title = (
+            f"{label} - {parsed['date_iso']}"
+            if "source_label" in parsed
+            else f"Weekly Letter - {parsed['year_groups']} - {parsed['date_iso']}"
+        )
         chunks = _make_chunks(parsed)
         log.info(
             "  Parsed %d item(s) from letter dated %s (%s)",
