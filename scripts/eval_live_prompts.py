@@ -249,7 +249,7 @@ async def main(hours: int) -> None:
 
     if not prompts_with_counts:
         print("\n  No prompts found in the specified window. Nothing to evaluate.")
-        return
+        return [], []
 
     results = []
     total = len(prompts_with_counts)
@@ -349,7 +349,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     try:
-        asyncio.run(main(args.hours))
+        fails, warns = asyncio.run(main(args.hours))
+        # Exit code 2 if any FAIL verdicts — lets the workflow detect problems
+        # without masking other errors (which use exit code 1).
+        if fails:
+            sys.exit(2)
     except KeyboardInterrupt:
         sys.exit(0)
     except Exception as e:

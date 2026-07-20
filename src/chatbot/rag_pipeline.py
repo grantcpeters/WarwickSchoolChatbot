@@ -309,6 +309,9 @@ _DATE_MON_YEAR = re.compile(
     r"october|november|december|jan|feb|mar|apr|jun|jul|aug|sep|sept|oct|nov|dec)\s+(\d{4})\b",
     re.IGNORECASE,
 )
+# Matches academic year labels like "2025/2026" or "2025-2026" — returns the end year
+# which is used to rank fee chunks so the newest academic year always wins.
+_ACADEMIC_YEAR = re.compile(r"\b(20\d{2})[/\-](20\d{2})\b")
 
 
 def _most_recent_date(text: str) -> int:
@@ -329,6 +332,12 @@ def _most_recent_date(text: str) -> int:
         except ValueError:
             pass
     return max((d.toordinal() for d in found), default=0)
+
+
+def _latest_academic_year(text: str) -> int:
+    """Return the highest end-year from any 'YYYY/YYYY' or 'YYYY-YYYY' pattern, or 0."""
+    years = [int(m.group(2)) for m in _ACADEMIC_YEAR.finditer(text)]
+    return max(years, default=0)
 
 
 def _int(s: str) -> int:
@@ -634,6 +643,17 @@ async def retrieve(query: str) -> list[dict]:
             current_fees = [c for c in raw if "/hiddenarea/" not in c["source"].lower()]
             if current_fees:
                 raw = current_fees
+
+            # Within chunks from the fees page, ensure the most recent academic year
+            # (e.g. 2026/2027) sorts above older years (e.g. 2025/2026).  Both chunks
+            # share the same URL and last_modified so the general date-ranker can't
+            # distinguish them — we pre-sort here by end-year descending so the newest
+            # year wins context slot 0 and the LLM reliably picks it up.
+            def _fee_sort_key(c: dict) -> int:
+                combined = (c.get("title") or "") + " " + c["content"]
+                return -_latest_academic_year(combined)
+
+            raw.sort(key=_fee_sort_key)
 
     # Re-rank all queries:
     #  - Demote news/blog posts below canonical section pages (stale event/activity info)
