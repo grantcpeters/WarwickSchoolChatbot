@@ -166,6 +166,7 @@ jobs:
         if: steps.check_fails.outputs.has_fails == 'true'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FAIL_COUNT: ${{ steps.check_fails.outputs.fail_count }}
         run: |
           WEEK=$(date -u +"%Y-%m-%d")
           TITLE="[Weekly Eval] ${FAIL_COUNT} prompt failure(s) — week of ${WEEK}"
@@ -179,9 +180,6 @@ jobs:
           else
             echo "Open eval-failure issue already exists — skipping creation."
           fi
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FAIL_COUNT: ${{ steps.check_fails.outputs.fail_count }}
 
       - name: Fail workflow if eval produced FAILs
         if: steps.check_fails.outputs.has_fails == 'true'
