@@ -2,6 +2,11 @@ name: Weekly Usage Report & Eval
 
 on:
   workflow_dispatch:
+    inputs:
+      hours:
+        description: "Hours to look back (default 168 = 7 days)"
+        required: false
+        default: "168"
   schedule:
     # Every Monday at 07:00 UTC — covers the past 7 days
     - cron: "0 7 * * 1"
@@ -55,28 +60,32 @@ jobs:
           gh label create "eval-failure" --color "d93f0b" --description "Automated prompt evaluation failure" 2>/dev/null || true
 
       # ── Step 1: Usage report ──────────────────────────────────────────────
-      - name: Run usage report (last 7 days)
+      - name: Run usage report
         id: usage
         run: |
-          python scripts/usage_report.py --hours 168 | tee usage_report.txt
+          HOURS=${{ github.event.inputs.hours || '168' }}
+          python scripts/usage_report.py --hours $HOURS | tee usage_report.txt
           # Write a markdown version to the step summary
           python - <<'EOF'
-          import subprocess, datetime
+          import datetime, os
+          hours = os.environ.get("HOURS", "168")
           with open("usage_report.txt") as f:
               raw = f.read()
           now = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M UTC")
-          summary = f"## Ask Warwick — Weekly Usage Report\n_{now}_\n\n```\n{raw}\n```\n"
-          import os
+          summary = f"## Ask Warwick — Weekly Usage Report\n_{now} — last {hours}h_\n\n```\n{raw}\n```\n"
           with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
               f.write(summary)
           EOF
+        env:
+          HOURS: ${{ github.event.inputs.hours || '168' }}
 
       # ── Step 2: Prompt evaluation ─────────────────────────────────────────
-      - name: Run prompt evaluation (last 7 days)
+      - name: Run prompt evaluation
         id: eval
         # exit 2 = FAILs found (handled below); exit 1 = real error (let it fail)
         run: |
-          python scripts/eval_live_prompts.py --hours 168 | tee eval_output.txt
+          HOURS=${{ github.event.inputs.hours || '168' }}
+          python scripts/eval_live_prompts.py --hours $HOURS | tee eval_output.txt
           echo "eval_exit=${PIPESTATUS[0]}" >> "$GITHUB_OUTPUT"
         continue-on-error: true
 
