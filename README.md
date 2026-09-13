@@ -144,6 +144,7 @@ WarwickSchoolChatbot/
 ### Prerequisites
 
 - Python 3.11 (matching GitHub Actions and `.python-version`)
+- `uv` for Python installation and dependency management
 - Node.js 20+
 - Azure CLI (`az login`)
 - Azure subscription with resources provisioned (see `infra/`)
