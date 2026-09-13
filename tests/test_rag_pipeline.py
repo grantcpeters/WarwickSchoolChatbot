@@ -207,15 +207,25 @@ async def test_retrieve_reranks_newer_news_before_older_news():
 
 
 @pytest.mark.asyncio
-async def test_retrieve_surfaces_menu_pdf_for_lunch_query():
-    """For lunch/menu queries, weekly menu PDFs from download.asp should be injected first."""
+@pytest.mark.parametrize(
+    "menu_url",
+    [
+        "https://www.warwickprep.com/attachments/download.asp?file=979&type=pdf",
+        (
+            "https://www.warwickprep.co.uk/wp-content/uploads/sites/6/2026/09/"
+            "WPS-Lunch-Menu-Week-2-14.09.26.pdf"
+        ),
+    ],
+)
+async def test_retrieve_surfaces_menu_pdf_for_lunch_query(menu_url):
+    """Lunch queries should pin both legacy and WordPress weekly menu PDFs."""
     general_chunk = make_search_result(
         content="Catering: all children have lunch at school. Menus are available online.",
         source_url="https://www.warwickprep.com/catering",
     )
     menu_pdf_chunk = make_search_result(
         content="WPS SUMMER TERM WEEK 3 2026 Monday Tuesday Wednesday Thursday Friday OPTION 1 BBQ Chicken",
-        source_url="https://www.warwickprep.com/attachments/download.asp?file=979&type=pdf",
+        source_url=menu_url,
     )
 
     call_count = 0
@@ -244,8 +254,46 @@ async def test_retrieve_surfaces_menu_pdf_for_lunch_query():
 
         results = await retrieve("what is on the lunch menu today")
         # Menu PDF should be injected at the front
-        assert "download.asp" in results[0]["source"]
+        assert results[0]["source"] == menu_url
         assert call_count == 2  # main search + supplemental menu search
+
+
+@pytest.mark.asyncio
+async def test_retrieve_does_not_pin_unrelated_pdf_for_lunch_query():
+    """A PDF needs menu evidence before it is pinned for a lunch query."""
+    general_chunk = make_search_result(
+        content="Catering information for parents.",
+        source_url="https://www.warwickprep.co.uk/school-life/catering/",
+    )
+    unrelated_pdf = make_search_result(
+        content="School inspection report and regulatory findings.",
+        source_url="https://www.warwickprep.co.uk/wp-content/uploads/inspection.pdf",
+        source_type="pdf",
+    )
+
+    def search_side_effect(*args, **kwargs):
+        search_text = kwargs.get("search_text", args[0] if args else "")
+        if "monday tuesday wednesday" in search_text.lower():
+            return AsyncIteratorMock([unrelated_pdf])
+        return AsyncIteratorMock([general_chunk])
+
+    instance = AsyncMock()
+    instance.__aenter__ = AsyncMock(return_value=instance)
+    instance.__aexit__ = AsyncMock(return_value=False)
+    instance.search.side_effect = search_side_effect
+
+    with patch("src.chatbot.rag_pipeline._get_openai") as mock_openai_cls, patch(
+        "src.chatbot.rag_pipeline._get_search"
+    ) as mock_search_cls:
+        mock_openai_cls.return_value = make_openai_mock()
+        mock_search_cls.return_value = instance
+
+        from src.chatbot.rag_pipeline import retrieve
+
+        results = await retrieve("what is on the lunch menu today")
+        assert [result["source"] for result in results] == [
+            "https://www.warwickprep.co.uk/school-life/catering/"
+        ]
 
 
 def test_most_recent_date_full_date():

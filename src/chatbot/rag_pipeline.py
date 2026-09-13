@@ -354,6 +354,24 @@ def _parse_iso(s: str | None) -> int:
         return 0
 
 
+def _is_menu_pdf_chunk(chunk: dict) -> bool:
+    """Return whether a search result is recognisably a weekly menu PDF."""
+    source = chunk["source"].lower()
+    is_pdf_url = source.endswith(".pdf") or (
+        "download.asp" in source and "type=pdf" in source
+    )
+    if not is_pdf_url:
+        return False
+
+    menu_evidence = " ".join(
+        (source, chunk.get("title") or "", chunk.get("content") or "")
+    ).lower()
+    return any(
+        marker in menu_evidence
+        for marker in ("menu", "week commencing", "option 1", "option one")
+    )
+
+
 def _build_system_prompt() -> str:
     return _SYSTEM_PROMPT_TEMPLATE.format(today=date.today().strftime("%d %B %Y"))
 
@@ -591,11 +609,9 @@ async def retrieve(query: str) -> list[dict]:
             menu_chunks = [
                 c
                 for c in menu_supp
-                if "download.asp" in c["source"].lower()
-                and "type=pdf" in c["source"].lower()
+                if _is_menu_pdf_chunk(c)
             ]
             if menu_chunks:
-                seen_urls = {c["source"] for c in raw}
                 raw = menu_chunks + [
                     c
                     for c in raw
