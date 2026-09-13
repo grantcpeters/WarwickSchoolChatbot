@@ -42,6 +42,7 @@ import os
 import re
 from datetime import datetime, timedelta, timezone
 from email import policy as email_policy
+from urllib.parse import urljoin, urlsplit
 
 import msal
 import requests
@@ -50,6 +51,7 @@ from dotenv import load_dotenv
 from PyPDF2 import PdfReader
 
 from src.indexer.run_indexer import (
+    chunk_text,
     embed,
     ensure_search_index,
     get_openai_client,
@@ -96,6 +98,17 @@ LETTER_SUBJECT_BLOCKLIST: list[str] = [
 
 LETTER_STATE_BLOB = "_letter_index_state.json"
 CONTAINER_RAW = os.getenv("AZURE_STORAGE_CONTAINER_RAW", "webcrawl-raw")
+LETTER_LINK_ALLOWED_DOMAINS: tuple[str, ...] = tuple(
+    domain.strip().lower()
+    for domain in os.getenv(
+        "LETTER_LINK_ALLOWED_DOMAINS",
+        "warwickprep.co.uk,warwickschoolsfoundation.co.uk",
+    ).split(",")
+    if domain.strip()
+)
+LETTER_LINK_MAX_PDFS = int(os.getenv("LETTER_LINK_MAX_PDFS", "5"))
+LETTER_LINK_MAX_BYTES = int(os.getenv("LETTER_LINK_MAX_BYTES", str(10 * 1024 * 1024)))
+_LINKED_PDF_INGESTION_VERSION = 1
 
 # ── Parsing helpers ───────────────────────────────────────────
 
@@ -469,6 +482,129 @@ def _fetch_attachment_text(message_id: str, token: str) -> str:
     return "\n".join(texts)
 
 
+def _is_allowed_link_url(url: str) -> bool:
+    """Allow HTTPS document links only from explicitly configured school domains."""
+    parsed = urlsplit(url)
+    hostname = (parsed.hostname or "").lower()
+    if parsed.scheme != "https" or not hostname or parsed.username or parsed.password:
+        return False
+    try:
+        port = parsed.port
+    except ValueError:
+        return False
+    if port not in (None, 443):
+        return False
+    return any(
+        hostname == domain or hostname.endswith(f".{domain}")
+        for domain in LETTER_LINK_ALLOWED_DOMAINS
+    )
+
+
+def _extract_linked_pdf_urls(html: str) -> list[tuple[str, str]]:
+    """Extract unique, allowlisted PDF links and their visible labels from HTML."""
+    links: list[tuple[str, str]] = []
+    seen: set[str] = set()
+    soup = BeautifulSoup(html, "lxml")
+    for anchor in soup.find_all("a", href=True):
+        url = anchor["href"].strip()
+        parsed = urlsplit(url)
+        is_pdf = parsed.path.lower().endswith(".pdf") or "type=pdf" in parsed.query.lower()
+        if not is_pdf or not _is_allowed_link_url(url) or url in seen:
+            continue
+        label = " ".join(anchor.get_text(" ", strip=True).split())
+        if not label:
+            label = parsed.path.rsplit("/", 1)[-1] or "Linked PDF"
+        links.append((label, url))
+        seen.add(url)
+        if len(links) >= LETTER_LINK_MAX_PDFS:
+            break
+    return links
+
+
+def _download_linked_pdf(url: str) -> bytes:
+    """Download one allowlisted PDF with redirect and size validation."""
+    if not _is_allowed_link_url(url):
+        raise ValueError(f"Linked PDF URL is not allowlisted: {url}")
+
+    current_url = url
+    response = None
+    for _ in range(6):
+        response = requests.get(
+            current_url,
+            headers={"User-Agent": "WarwickSchoolChatbot-LetterIngester/1.0"},
+            timeout=(5, 20),
+            allow_redirects=False,
+            stream=True,
+        )
+        if response.is_redirect or response.is_permanent_redirect:
+            location = response.headers.get("location")
+            response.close()
+            if not location:
+                raise ValueError(f"Linked PDF redirect has no location: {current_url}")
+            current_url = urljoin(current_url, location)
+            if not _is_allowed_link_url(current_url):
+                raise ValueError(
+                    f"Linked PDF redirected outside the allowlist: {current_url}"
+                )
+            continue
+        break
+    else:
+        raise ValueError(f"Linked PDF has too many redirects: {url}")
+
+    if response is None:
+        raise RuntimeError(f"Linked PDF request did not produce a response: {url}")
+
+    try:
+        response.raise_for_status()
+        if not _is_allowed_link_url(response.url):
+            raise ValueError(
+                f"Linked PDF response is outside the allowlist: {response.url}"
+            )
+
+        content_length = response.headers.get("content-length")
+        if content_length and int(content_length) > LETTER_LINK_MAX_BYTES:
+            raise ValueError(f"Linked PDF exceeds {LETTER_LINK_MAX_BYTES} bytes: {url}")
+
+        content = bytearray()
+        for block in response.iter_content(chunk_size=64 * 1024):
+            if not block:
+                continue
+            content.extend(block)
+            if len(content) > LETTER_LINK_MAX_BYTES:
+                raise ValueError(
+                    f"Linked PDF exceeds {LETTER_LINK_MAX_BYTES} bytes: {url}"
+                )
+
+        content_type = response.headers.get("content-type", "").lower()
+        if "pdf" not in content_type and not content.startswith(b"%PDF"):
+            raise ValueError(f"Linked document is not a PDF: {url}")
+        return bytes(content)
+    finally:
+        response.close()
+
+
+def _fetch_linked_pdf_documents(
+    html: str,
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Download safe PDF links, returning extracted documents and failed URLs."""
+    documents: list[dict[str, str]] = []
+    failed_urls: list[str] = []
+    for label, url in _extract_linked_pdf_urls(html):
+        try:
+            pdf_text = _extract_pdf_text(_download_linked_pdf(url))
+        except (requests.RequestException, ValueError) as exc:
+            log.warning("Could not download linked PDF %s: %s", url, exc)
+            failed_urls.append(url)
+            continue
+        if not pdf_text:
+            log.warning("No extractable text in linked PDF: %s", url)
+            failed_urls.append(url)
+            continue
+        log.info("  Extracted %d chars from linked PDF: %s", len(pdf_text), url)
+        documents.append({"label": label, "url": url, "text": pdf_text})
+    return documents, failed_urls
+
+
 def _graph_patch(path: str, token: str, body: dict) -> None:
     """Make a PATCH request to Microsoft Graph (e.g. to mark message as read)."""
     resp = requests.patch(
@@ -565,8 +701,12 @@ def fetch_and_index_letters() -> int:
             log.debug("Skipping (sender mismatch): %s", from_addr)
             continue
 
-        # Skip letters already indexed
-        if message_id in state:
+        # Reprocess old indexed letters once when linked-PDF support changes.
+        state_entry = state.get(message_id)
+        if state_entry and (
+            state_entry.get("skipped")
+            or state_entry.get("linked_pdf_version") == _LINKED_PDF_INGESTION_VERSION
+        ):
             log.debug("Already indexed, skipping: %s", subject)
             continue
 
@@ -617,6 +757,11 @@ def fetch_and_index_letters() -> int:
             _graph_patch(f"/me/messages/{graph_id}", access_token, {"isRead": True})
             continue
 
+        linked_pdfs, failed_link_urls = (
+            _fetch_linked_pdf_documents(content)
+            if content_type.lower() == "html"
+            else ([], [])
+        )
         source_url = _make_source_url(parsed["date_iso"], parsed["year_groups"])
         label = parsed.get(
             "source_label", f"{parsed['year_groups']} - {parsed['date_iso']}"
@@ -650,16 +795,50 @@ def fetch_and_index_letters() -> int:
             }
             for i, (chunk, vector) in enumerate(zip(chunks, vectors))
         ]
+        linked_sources: list[dict[str, object]] = []
+        for linked_pdf in linked_pdfs:
+            linked_chunks = [
+                (
+                    f"[Linked PDF from {page_title}] "
+                    f"{linked_pdf['label']}: {pdf_chunk}"
+                )
+                for pdf_chunk in chunk_text(linked_pdf["text"])
+            ]
+            linked_vectors = embed(openai_client, linked_chunks)
+            docs.extend(
+                {
+                    "id": make_doc_id(linked_pdf["url"], i),
+                    "content": chunk,
+                    "source_url": linked_pdf["url"],
+                    "source_type": "letter_link_pdf",
+                    "page_title": linked_pdf["label"],
+                    "chunk_index": i,
+                    "content_vector": vector,
+                    "last_modified": lm,
+                }
+                for i, (chunk, vector) in enumerate(
+                    zip(linked_chunks, linked_vectors)
+                )
+            )
+            linked_sources.append(
+                {"url": linked_pdf["url"], "chunk_count": len(linked_chunks)}
+            )
         search_client.upload_documents(docs)
         log.info("  Indexed %d chunk(s) for %s", len(docs), source_url)
 
-        state[message_id] = {
+        state_entry = {
             "source_url": source_url,
             "chunk_count": len(docs),
             "date_iso": parsed["date_iso"],
             "year_groups": parsed["year_groups"],
             "subject": subject,
+            "linked_sources": linked_sources,
         }
+        if failed_link_urls:
+            state_entry["linked_pdf_failures"] = failed_link_urls
+        else:
+            state_entry["linked_pdf_version"] = _LINKED_PDF_INGESTION_VERSION
+        state[message_id] = state_entry
 
         # Mark as read so we never process it again
         _graph_patch(f"/me/messages/{graph_id}", access_token, {"isRead": True})

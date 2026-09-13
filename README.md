@@ -1,6 +1,6 @@
 # WarwickSchoolChatbot
 
-An AI-powered chatbot for Warwick Prep School that uses the school website (warwickprep.com) and weekly parent letters as its knowledge base.
+An AI-powered chatbot for Warwick Prep School that uses the school website (warwickprep.co.uk) and weekly parent letters as its knowledge base.
 
 ## Overview
 
@@ -9,13 +9,14 @@ This project crawls the school website (including nested pages and PDF documents
 ## Architecture
 
 ```
-warwickprep.com (website + PDFs)          Forwarded weekly parent letters
+warwickprep.co.uk (website + PDFs)        Forwarded weekly parent letters
         │                                           │
         ▼                                           ▼
 ┌───────────────────┐              ┌─────────────────────────────┐
 │  Crawler          │  src/crawler/ │  Letter Ingester            │
 │  - BeautifulSoup  │              │  - Microsoft Graph REST API  │
 │  - PDF extractor  │              │  - Outlook.com mailbox       │
+│  - Safe linked-PDF downloads │
 │  - Azure Blob     │              │  - scripts/ingest_letters.py │
 └───────────┬───────┘              └──────────────┬──────────────┘
             │                                     │
@@ -66,7 +67,8 @@ WarwickSchoolChatbot/
 │   ├── eval_live_prompts.py   # Live prompt evaluation (Log Analytics)
 │   ├── usage_report.py        # Usage report from Log Analytics
 │   ├── deploy_workbook.py     # Deploy Azure Monitor workbook
-│   └── check_menu.py          # Debug helper for menu retrieval
+│   ├── check_menu.py          # Debug helper for menu retrieval
+│   └── check_current_menu.py  # Current/upcoming menu index monitor
 ├── src/
 │   ├── crawler/               # Web crawler and PDF downloader
 │   ├── indexer/               # Chunking, embedding and indexing pipeline
@@ -100,7 +102,8 @@ WarwickSchoolChatbot/
 
 - One Azure App Service hosting the FastAPI backend with the built React frontend served as static files.
 - Existing Azure OpenAI, Azure AI Search, Azure Blob Storage, and Azure Document Intelligence services.
-- Weekly GitHub Actions workflow that runs on Fridays at 17:00 UTC (end of school day, after letters are sent Thursday): ingests letters → crawls website → indexes content.
+- Weekly GitHub Actions workflow that runs on Fridays at 22:00 UTC: ingests letters → crawls website → indexes content → checks for a current/upcoming menu.
+- Monthly keepalive workflow that records repository activity so GitHub does not disable scheduled workflows after 60 inactive days.
 
 ### GitHub Configuration
 
@@ -140,7 +143,7 @@ WarwickSchoolChatbot/
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.11 (matching GitHub Actions and `.python-version`)
 - Node.js 20+
 - Azure CLI (`az login`)
 - Azure subscription with resources provisioned (see `infra/`)
@@ -150,10 +153,11 @@ WarwickSchoolChatbot/
 ```bash
 git clone https://github.com/grantcpeters/WarwickSchoolChatbot.git
 cd WarwickSchoolChatbot
-python -m venv .venv
+uv python install 3.11
+uv venv --python 3.11 .venv
 .venv\Scripts\activate        # Windows
 # source .venv/bin/activate   # macOS/Linux
-pip install -r requirements.txt
+uv pip install -r requirements.txt
 ```
 
 ### 2. Configure environment
@@ -191,6 +195,8 @@ python scripts/ingest_letters.py
 
 Set up a server-side forwarding rule in your email client: any email **From @warwickschools.co.uk** with **Subject containing "Weekly Letter"** → forward to the `LETTER_EMAIL` Outlook.com address.
 
+The ingester also downloads PDF links from explicitly allowlisted school domains. Configure `LETTER_LINK_ALLOWED_DOMAINS`, `LETTER_LINK_MAX_PDFS`, and `LETTER_LINK_MAX_BYTES` to change the safe defaults.
+
 ### 6. Start the API
 
 ```bash
@@ -213,6 +219,7 @@ npm start
 | `scripts/usage_report.py`       | Human-readable usage summary (unique visitors, total hits, feedback, top prompts)            |
 | `scripts/deploy_workbook.py`    | Deploy the Azure Monitor workbook for usage dashboards                                       |
 | `scripts/check_menu.py`         | Debug helper — checks what the menu retrieval returns for a given date                       |
+| `scripts/check_current_menu.py` | Workflow monitor — verifies a current or upcoming menu PDF is present in Azure AI Search      |
 | `scripts/setup_letter_oauth.py` | One-time Microsoft Graph OAuth2 token setup                                                  |
 
 Run eval against the last 48 hours of real prompts:
@@ -227,7 +234,8 @@ Run eval against the last 48 hours of real prompts:
 - Forwarded weekly parent letters add current school news and upcoming events that aren't on the website.
 - Azure Blob Storage holds the latest crawled snapshot plus crawl/index state.
 - Azure AI Search is the retrieval layer used by the chatbot at runtime.
-- The GitHub Actions workflow runs every **Friday at 17:00 UTC**: letters → crawl → index.
+- The GitHub Actions workflow runs every **Friday at 22:00 UTC**: letters → crawl → index → menu check.
+- `.github/workflows/keepalive.yml` creates a small monthly activity commit because GitHub automatically disables scheduled workflows in inactive public repositories after 60 days.
 - The RAG pipeline uses hybrid search (vector + keyword) with supplemental keyword-only searches to ensure key pages (staff list, term dates, lunch menus) are always retrieved for the relevant query types.
 
 ## License
